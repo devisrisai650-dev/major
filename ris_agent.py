@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +33,7 @@ class QLearningRISAgent:
         current_ris = int(observation["current_ris_config"])
         priority = self.priority_index[observation["priority"]]
         snr = observation["snr_db"][:, current_ris]
-        bins = np.digitize(snr, [-1.0, 5.0, 10.0]).astype(int)
+        bins = np.digitize(snr, [-1.0, 5.0, 10.0]).astype(int)  # 0..3
         channel_code = 0
         multiplier = 1
         for bucket in bins:
@@ -51,9 +50,11 @@ class QLearningRISAgent:
         state = self.encode_state(observation)
         if explore and self.rng.random() < self.epsilon:
             return int(self.rng.choice(valid))
-        expected_reward = np.full(
-            valid.size, -0.30 * PRIORITY_WEIGHT[observation["priority"]]
-        )
+        # The simulator exposes current per-action link estimates. Use those
+        # observations to avoid choosing a visibly weak link; the learned Q
+        # value supplies a small continuation/tie-break preference that is
+        # updated from delivery feedback.
+        expected_reward = np.full(valid.size, -0.30 * PRIORITY_WEIGHT[observation["priority"]])
         for i, action in enumerate(valid):
             if action == self.wait_action:
                 continue
@@ -62,11 +63,7 @@ class QLearningRISAgent:
             latency = float(observation["latency_ms"][channel, ris_config])
             throughput = float(observation["throughput_mbps"][channel, ris_config])
             weight = PRIORITY_WEIGHT[observation["priority"]]
-            switch_cost = (
-                RIS_SWITCH_PENALTY
-                if ris_config != int(observation["current_ris_config"])
-                else 0.0
-            )
+            switch_cost = RIS_SWITCH_PENALTY if ris_config != int(observation["current_ris_config"]) else 0.0
             expected_reward[i] = (
                 weight * (2.25 * probability - 1.25)
                 - weight * latency / 250.0
@@ -97,27 +94,22 @@ class QLearningRISAgent:
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp = path.with_name(f".{path.name}.tmp.npz")
-        np.savez_compressed(
-            temp,
-            q=self.q,
-            n_channels=self.n_channels,
-            n_ris_configs=self.n_ris_configs,
-        )
-        os.replace(temp, path)
+        np.savez_compressed(path, q=self.q, n_channels=self.n_channels,
+                            n_ris_configs=self.n_ris_configs)
 
     def load(self, path: str | Path) -> None:
-        with np.load(path) as saved:
-            if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
-                raise ValueError("Saved Q-table dimensions do not match this environment")
-            table = saved["q"]
-            if table.shape != self.q.shape:
-                raise ValueError("Saved Q-table has an unexpected shape")
-            self.q[:] = table
+        saved = np.load(path)
+        if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
+            raise ValueError("Saved Q-table dimensions do not match this environment")
+        table = saved["q"]
+        if table.shape != self.q.shape:
+            raise ValueError("Saved Q-table has an unexpected shape")
+        self.q[:] = table
 
 
 def train_agent(agent: QLearningRISAgent, env, episodes: int = 1200,
                 max_steps: int | None = None) -> list[float]:
+    """Train using simulated message priorities and changing channel fades."""
     from ris_environment import PRIORITY_WEIGHT
 
     episode_rewards = []
