@@ -1,0 +1,34 @@
+{
+  "regions": [
+    {
+      "id": "region_001",
+      "name": "Kakinada",
+      "latitude": 16.9891,
+      "longitude": 82.2475,
+      "timezone": "Asia/Kolkata",
+      "river": "Godavari",
+      "water_level_station": "Gokavaram_1",
+      "water_level_file": "godavari.csv"
+    },
+    {
+      "id": "region_002",
+      "name": "Vijayawada",
+      "latitude": 16.5062,
+      "longitude": 80.6480,
+      "timezone": "Asia/Kolkata",
+      "river": "Krishna",
+      "water_level_station": "Neerukonda",
+      "water_level_file": "krishna.csv"
+    },
+    {
+      "id": "region_003",
+      "name": "Machilipatnam",
+      "latitude": 16.1875,
+      "longitude": 81.1389,
+      "timezone": "Asia/Kolkata",
+      "river": "Krishna",
+      "water_level_station": "Lazzabanda drain at Pedana",
+      "water_level_file": "krishna.csv"
+    }
+  ]
+}

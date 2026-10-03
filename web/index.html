@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1720">
+  <title>FloodAI | Regional Monitor</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1720; --panel:#12232e; --panel2:#172c38; --line:#29404d; --text:#edf5f6; --muted:#9db2bb; --teal:#55d6bd; --amber:#ffcf70; --red:#ff8d84; }
+    * { box-sizing:border-box }
+    body { margin:0; background:radial-gradient(ellipse at 75% -10%,#1d3b43 0,transparent 45%),var(--bg); color:var(--text); font:15px/1.5 "Segoe UI",system-ui,sans-serif }
+    header { padding:22px clamp(18px,4vw,56px); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:16px; align-items:center }
+    .brand { display:flex; align-items:center; gap:13px }.mark { width:40px;height:40px;border-radius:13px;background:#173b42;color:var(--teal);display:grid;place-items:center;font-size:22px }
+    h1 { font-size:19px; margin:0; letter-spacing:.02em } .subtitle { color:var(--muted);font-size:12px }
+    .sim-badge { border:1px solid #57754e;border-radius:99px;padding:6px 11px;color:#c8e8aa;font-size:12px;white-space:nowrap }
+    main { max-width:1240px;margin:0 auto;padding:28px clamp(16px,4vw,48px) 52px }
+    .toolbar { display:flex;justify-content:space-between;align-items:end;gap:18px;flex-wrap:wrap;margin-bottom:22px }
+    .eyebrow { text-transform:uppercase;letter-spacing:.15em;color:var(--teal);font-size:11px;font-weight:700 }
+    h2 { font-size:27px;line-height:1.2;margin:5px 0 0 } .controls { display:flex;gap:10px;align-items:end;flex-wrap:wrap }
+    label { display:block;color:var(--muted);font-size:12px;margin-bottom:5px }
+    select,button { font:inherit;border-radius:9px;border:1px solid var(--line);padding:10px 13px;color:var(--text);background:var(--panel2) }
+    select { min-width:210px } button { cursor:pointer;background:var(--teal);border-color:var(--teal);color:#06231f;font-weight:700;min-width:132px } button:disabled { opacity:.55;cursor:wait }
+    .banner { border:1px solid #7a6742;background:#30291c;border-radius:14px;padding:17px 20px;margin-bottom:17px;display:grid;grid-template-columns:auto 1fr;gap:15px;align-items:start }
+    .banner .state { font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--amber);border:1px solid #8e7947;border-radius:8px;padding:6px 9px;white-space:nowrap }
+    .banner strong { display:block;margin-bottom:3px }.banner p { color:#d0c7b2;margin:0;font-size:13px }
+    .grid { display:grid;grid-template-columns:repeat(12,1fr);gap:14px }
+    .card { grid-column:span 6;background:linear-gradient(145deg,var(--panel),#10202a);border:1px solid var(--line);border-radius:15px;padding:18px 19px;min-width:0 }
+    .card.third { grid-column:span 4 }.card.full { grid-column:1/-1 }
+    .card h3 {font-size:14px;margin:0 0 15px;letter-spacing:.03em}.card-note {color:var(--muted);font-size:12px;margin:-9px 0 13px}
+    .metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.metric {padding:11px;background:rgba(255,255,255,.025);border-radius:10px;min-width:0}.metric span {display:block;color:var(--muted);font-size:11px}.metric b {display:block;margin-top:3px;font-size:18px;overflow-wrap:anywhere}
+    .rows {display:grid;grid-template-columns:1fr auto;gap:9px 14px;font-size:13px}.rows span:nth-child(odd){color:var(--muted)}.rows span:nth-child(even){text-align:right;overflow-wrap:anywhere}
+    .message {padding:15px;border-radius:10px;background:#0a171e;border:1px solid var(--line);font:13px/1.6 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;margin-bottom:12px}
+    .pill {display:inline-block;font-size:11px;border-radius:99px;padding:3px 8px;border:1px solid var(--line);color:var(--muted)}.pill.ok {color:#a7eddc;border-color:#36776b}.pill.warn {color:var(--amber);border-color:#78653f}
+    table {width:100%;border-collapse:collapse;font-size:12px}th,td {text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th {color:var(--muted);font-weight:600}td {overflow-wrap:anywhere}
+    .empty {color:var(--muted);font-size:13px}.notice {margin-top:18px;color:var(--muted);font-size:11px}.error {color:var(--red);min-height:20px;font-size:13px;margin-top:8px}
+    @media(max-width:760px){.card,.card.third{grid-column:1/-1}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.banner{grid-template-columns:1fr}header{align-items:flex-start}.sim-badge{font-size:10px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="mark" aria-hidden="true">≈</div><div><h1>FloodAI</h1><div class="subtitle">Regional monitoring and semantic communication</div></div></div>
+    <div id="service-badge" class="sim-badge">Connecting to local service…</div>
+  </header>
+  <main>
+    <section class="toolbar">
+      <div><div class="eyebrow">Monitoring console</div><h2 id="region-heading">Choose a region</h2></div>
+      <div class="controls">
+        <div><label for="region-select">Region</label><select id="region-select"><option value="">Loading regions…</option></select></div>
+        <div><label for="attempts">Transmission attempts</label><select id="attempts"><option>1</option><option>3</option><option selected>5</option><option>10</option></select></div>
+        <button id="run-button" disabled>Run pipeline</button>
+      </div>
+    </section>
+    <div id="error" class="error" role="alert"></div>
+    <section id="results" hidden aria-live="polite">
+      <div class="banner">
+        <div id="assessment-state" class="state">NOT ASSESSED</div>
+        <div><strong>Flood assessment is unavailable</strong><p id="assessment-reason"></p><p id="assessment-missing"></p></div>
+      </div>
+      <div class="grid">
+        <article class="card"><h3>Weather</h3><p class="card-note">Open-Meteo model data</p><div class="metrics">
+          <div class="metric"><span>Temperature</span><b id="temperature">—</b></div><div class="metric"><span>Humidity</span><b id="humidity">—</b></div><div class="metric"><span>Current rain</span><b id="current-rain">—</b></div><div class="metric"><span>Wind</span><b id="wind">—</b></div><div class="metric"><span>Observed at</span><b id="observed-at" style="font-size:13px">—</b></div>
+        </div></article>
+        <article class="card"><h3>Observed rainfall accumulation</h3><p class="card-note">Hourly precipitation sums; incomplete windows stay unavailable.</p><div class="metrics">
+          <div class="metric"><span>Last 1 hour</span><b id="rain-1h">—</b></div><div class="metric"><span>Last 3 hours</span><b id="rain-3h">—</b></div><div class="metric"><span>Last 6 hours</span><b id="rain-6h">—</b></div><div class="metric"><span>Last 24 hours</span><b id="rain-24h">—</b></div>
+        </div></article>
+        <article class="card third"><h3>River discharge</h3><div class="rows"><span>Modeled forecast</span><span id="discharge">—</span><span>Forecast date</span><span id="discharge-date">—</span><span>Source status</span><span id="discharge-status">—</span></div></article>
+        <article class="card third"><h3>Configured station</h3><div class="rows"><span>Station</span><span id="station">—</span><span>Current reading</span><span id="water-level">—</span><span>Latest file value</span><span id="historical-level">—</span><span>Recorded at</span><span id="water-time">—</span><span>Age</span><span id="water-age">—</span></div></article>
+        <article class="card third"><h3>Semantic priorities</h3><div id="priorities" class="empty">Run the pipeline to populate priorities.</div></article>
+        <article class="card full"><h3>Selected semantic message</h3><div id="semantic-message" class="message">—</div><div><span id="delivery-status" class="pill">Waiting to run</span></div><p id="receiver-message" class="card-note" style="margin:10px 0 0"></p></article>
+        <article class="card full"><h3>Simulated channel and virtual RIS decisions</h3><p class="card-note">The agent receives feedback from each simulated attempt and updates its saved policy.</p><div id="attempt-list" class="empty">No attempts yet.</div></article>
+      </div>
+      <p class="notice">Simulation only: candidate channels, channel conditions, RIS effects, and receiver outcomes are generated in software. “NOT ASSESSED” is neither a flood warning nor an all-clear. Follow official local guidance.</p>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const api = window.location.origin;
+    function set(id, value, fallback = "UNAVAILABLE") { $(id).textContent = value === null || value === undefined || value === "" ? fallback : String(value); }
+    function fmt(value, unit = "", digits = 1) { return value === null || value === undefined ? "UNAVAILABLE" : `${Number(value).toFixed(digits)}${unit}`; }
+    function cell(row, value) { const td = document.createElement("td"); td.textContent = value === null || value === undefined ? "—" : String(value); row.appendChild(td); }
+    async function loadRegions() {
+      const response = await fetch(`${api}/api/regions`);
+      if (!response.ok) throw new Error(`Could not load regions (${response.status})`);
+      const regions = await response.json();
+      const select = $("region-select"); select.replaceChildren();
+      for (const region of regions) { const option = document.createElement("option"); option.value = region.id; option.textContent = `${region.name} — ${region.river}`; select.appendChild(option); }
+      $("run-button").disabled = regions.length === 0;
+      if (regions.length) $("region-heading").textContent = regions[0].name;
+      select.addEventListener("change", () => { const item = regions.find((r) => r.id === select.value); $("region-heading").textContent = item ? item.name : "Choose a region"; });
+    }
+    function renderPriorities(items) {
+      const table = document.createElement("table"); const head = document.createElement("tr");
+      for (const title of ["Item", "Value", "Priority"]) { const th = document.createElement("th"); th.textContent = title; head.appendChild(th); }
+      const thead = document.createElement("thead"); thead.appendChild(head); table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      for (const [name, item] of Object.entries(items || {})) { const row = document.createElement("tr"); cell(row, name.replaceAll("_", " ")); cell(row, item.available ? item.value : "UNAVAILABLE"); cell(row, item.priority); tbody.appendChild(row); }
+      table.appendChild(tbody); $("priorities").replaceChildren(table);
+    }
+    function renderAttempts(attempts) {
+      const table = document.createElement("table"); const head = document.createElement("tr");
+      for (const title of ["Try", "Candidate", "RIS setting", "Condition", "SNR", "Delay", "Result"]) { const th = document.createElement("th"); th.textContent = title; head.appendChild(th); }
+      const thead = document.createElement("thead"); thead.appendChild(head); table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      for (const item of attempts || []) { const row = document.createElement("tr"); cell(row, item.attempt); cell(row, item.candidate || "Queued"); cell(row, item.ris_configuration ?? "—"); cell(row, item.channel_condition || "—"); cell(row, fmt(item.snr_db, " dB", 2)); cell(row, fmt(item.latency_ms, " ms", 1)); cell(row, item.waited ? "Queued" : item.delivered ? "Delivered" : "Retry"); tbody.appendChild(row); }
+      table.appendChild(tbody); $("attempt-list").replaceChildren(table);
+    }
+    function render(data) {
+      const w = data.weather.current, rain = data.flood_indicators.rainfall, river = data.river_discharge, water = data.water_level, assessment = data.flood_assessment, comm = data.communication;
+      $("results").hidden = false;
+      $("region-heading").textContent = data.region.name;
+      set("assessment-state", assessment.status); set("assessment-reason", assessment.reason);
+      set("assessment-missing", `Missing or unconfigured: ${(assessment.missing_or_unconfigured || []).join("; ") || "none"}`);
+      set("temperature", fmt(w.temperature_c, " °C")); set("humidity", fmt(w.humidity_pct, " %")); set("current-rain", fmt(w.rain_mm, " mm")); set("wind", fmt(w.wind_speed_kmh, " km/h")); set("observed-at", w.time);
+      for (const hours of [1,3,6,24]) set(`rain-${hours}h`, fmt(rain[`last_${hours}h_precipitation_mm`], " mm"));
+      set("discharge", fmt(river.discharge_m3s, " m³/s", 2)); set("discharge-date", river.time); set("discharge-status", river.reason || "Available");
+      set("station", water.station); set("water-level", water.available ? fmt(water.current_level_m, " m", 3) : "UNAVAILABLE");
+      set("historical-level", water.latest_observed_m === null ? "UNAVAILABLE" : fmt(water.latest_observed_m, " m", 3)); set("water-time", water.current_time); set("water-age", water.age_hours === null ? "UNAVAILABLE" : fmt(water.age_hours, " hours", 1));
+      set("semantic-message", data.semantic_message);
+      const badge = $("delivery-status"); badge.textContent = comm.delivered ? `Delivered · ${comm.attempts.length} attempt${comm.attempts.length === 1 ? "" : "s"}` : `Not delivered · queued after ${comm.attempts.length} attempt${comm.attempts.length === 1 ? "" : "s"}`; badge.className = `pill ${comm.delivered ? "ok" : "warn"}`;
+      set("receiver-message", comm.delivered ? `Receiver decoded: ${comm.packet_received}` : "Receiver did not decode the packet within the retry limit.");
+      renderPriorities(data.semantic_priorities); renderAttempts(comm.attempts);
+    }
+    $("run-button").addEventListener("click", async () => {
+      $("error").textContent = ""; $("run-button").disabled = true; $("run-button").textContent = "Running…";
+      try {
+        const response = await fetch(`${api}/api/run`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({region_id:$ ("region-select").value, communication_attempts:Number($("attempts").value)})});
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`); render(payload);
+      } catch (error) { $("error").textContent = error.message; }
+      finally { $("run-button").disabled = false; $("run-button").textContent = "Run pipeline"; }
+    });
+    (async () => { try { const health = await fetch(`${api}/api/health`); if (!health.ok) throw new Error("API unavailable"); $("service-badge").textContent = "Local API connected · software simulation"; await loadRegions(); } catch (error) { $("service-badge").textContent = "Local API unavailable"; $("error").textContent = `${error.message}. Start the backend with the command in the project guide.`; } })();
+  </script>
+</body>
+</html>
