@@ -1,32 +1,39 @@
 import argparse
 from pathlib import Path
+
 from services.region_manager import load_regions, get_region
 from services.weather_service import get_weather_data
 from services.flood_api import get_discharge_analysis
-from services.water_level import get_water_level_analysis
+from services.gauge_provider import CsvReplayProvider
 from services.flood_state import analyze_flood_state
 from services.semantic_priority import (
     build_semantic_priorities,
+    calculate_semantic_compression,
     select_transmission_parameters,
     generate_semantic_message,
 )
 from services.channel_predictor import predict_channel
 from semantic_transmission import transmit_semantic_message
 
+
 def show(value, unit=""):
     return "UNAVAILABLE" if value is None else f"{value}{unit}"
 
-def run(region, communication_attempts=5):
+
+def run(region, communication_attempts=5, seed=2026, learn=False):
     print(f"\nFlood monitoring - {region['name']} ({region['river']})")
-    weather = get_weather_data(region["latitude"], region["longitude"], region.get("timezone", "Asia/Kolkata"))
+    weather = get_weather_data(
+        region["latitude"], region["longitude"],
+        region.get("timezone", "Asia/Kolkata"),
+    )
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
-    water = get_water_level_analysis(region)
+    water = CsvReplayProvider().get_water_level(region)
     data = analyze_flood_state(weather, discharge, water)
 
     current = weather["current"]
-    print("\nWEATHER (Open-Meteo model data)")
+    print("\nWEATHER (Open-Meteo model-derived data)")
     for label, key, unit in [
-        ("Observation", "time", ""),
+        ("Observation time", "time", ""),
         ("Temperature", "temperature_c", " C"),
         ("Humidity", "humidity_pct", " %"),
         ("Current rain", "rain_mm", " mm"),
@@ -34,21 +41,34 @@ def run(region, communication_attempts=5):
     ]:
         print(f"{label}: {show(current.get(key), unit)}")
 
-    print("\nRAINFALL ACCUMULATION (observed hourly precipitation)")
+    print("\nRAINFALL ACCUMULATION (Open-Meteo model-derived hourly precipitation)")
     for hours in (1, 3, 6, 24):
-        print(f"Last {hours}h: {show(data['rainfall'][f'last_{hours}h_precipitation_mm'], ' mm')}")
+        print(
+            f"Last {hours}h: "
+            f"{show(data['rainfall'][f'last_{hours}h_precipitation_mm'], ' mm')}"
+        )
 
     print("\nHYDROLOGY")
-    print(f"Modeled daily discharge forecast: {show(discharge.get('discharge_m3s'), ' m3/s')} for {discharge.get('time') or 'unknown date'}")
+    print(
+        "Modeled daily discharge forecast: "
+        f"{show(discharge.get('discharge_m3s'), ' m3/s')} "
+        f"for {discharge.get('time') or 'unknown date'}"
+    )
     print(f"Forecast source status: {discharge.get('reason') or 'available'}")
     print(f"Configured station: {water.get('station')}")
     if water.get("is_recent"):
-        print(f"Fresh station water level: {show(water.get('current_level_m'), ' m')} at {water.get('current_time')}")
+        print(
+            f"Fresh QC-passed station water level: "
+            f"{show(water.get('current_level_m'), ' m')} at {water.get('current_time')}"
+        )
     elif water.get("latest_observed_m") is not None:
-        print(f"Latest file observation: {water['latest_observed_m']} m at {water['current_time']} ({water['age_hours']:.1f} hours old)")
-        print(f"Live station reading: UNAVAILABLE - {water.get('reason')}")
+        print(
+            f"Latest QC-passed file observation: {water['latest_observed_m']} m "
+            f"at {water['current_time']} ({water['age_hours']:.1f} hours old)"
+        )
+        print(f"Current station reading: UNAVAILABLE - {water.get('reason')}")
     else:
-        print(f"Live station reading: UNAVAILABLE - {water.get('reason')}")
+        print(f"Current station reading: UNAVAILABLE - {water.get('reason')}")
 
     assessment = data["flood_assessment"]
     print("\nFLOOD ASSESSMENT")
@@ -67,6 +87,10 @@ def run(region, communication_attempts=5):
     print("\nSEMANTIC MESSAGE")
     semantic_message = generate_semantic_message(region["name"], data, selected)
     print(semantic_message)
+    print(
+        f"Semantic compression: "
+        f"{calculate_semantic_compression(len(priorities), len(selected)):.1f}%"
+    )
 
     print("\nSIMULATED SEMANTIC COMMUNICATION + VIRTUAL RIS")
     print("All channel measurements, RIS effects, and packet outcomes below are simulated.")
@@ -76,11 +100,16 @@ def run(region, communication_attempts=5):
         priorities=priorities,
         policy_path=policy_path,
         max_attempts=communication_attempts,
+        seed=seed,
+        learn=learn,
     )
     print(f"Message priority: {result['priority']}")
     for item in result["attempts"]:
         if item["waited"]:
-            print(f"Attempt {item['attempt']}: no candidate met the simulated availability threshold; message queued")
+            print(
+                f"Attempt {item['attempt']}: no candidate met the simulated "
+                "availability threshold; message queued"
+            )
         else:
             print(
                 f"Attempt {item['attempt']}: {item['candidate']} | "
@@ -93,8 +122,14 @@ def run(region, communication_attempts=5):
         print("Receiver: packet decoded and semantic message received:")
         print(result["packet_received"])
     else:
-        print("Receiver: packet not delivered within the attempt limit; remains queued for a later retry.")
-    print(f"Agent updated from simulated feedback; policy saved to {result['policy_path']}")
+        print(
+            "Receiver: packet not delivered within the attempt limit; "
+            "remains queued for a later retry."
+        )
+    print(
+        f"Policy {'updated and saved' if learn else 'left unchanged'}: "
+        f"{result['policy_path']}"
+    )
 
     channel = predict_channel(None, None, None, None, None)
     print("\nCHANNEL MODEL")
@@ -104,19 +139,25 @@ def run(region, communication_attempts=5):
     print("Channel condition bands (K-factor rules):")
     for band in channel["condition_bands"]:
         print(f"  {band['condition']}: {band['status']} ({band['rule']})")
-    print(f"Radio-link availability: {channel['link_availability']} (requires link measurements such as SNR, packet success, or outage criteria)")
+    print(f"Radio-link availability: {channel['link_availability']}")
     if not channel["available"]:
-        print("Required measured inputs: water_depth, los_obstruction, debris_density, flow_velocity, reflection_dominance.")
+        print(
+            "Required measured inputs: water_depth, los_obstruction, "
+            "debris_density, flow_velocity, reflection_dominance."
+        )
         print("Do not substitute river gauge level or synthetic guesses for these measurements.")
     else:
         print(channel["model_note"])
     print("No channel quality percentage is reported.")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Regional flood and semantic monitoring")
     parser.add_argument("--region", help="Configured region ID (interactive selection if omitted)")
-    parser.add_argument("--communication-attempts", type=int, default=5,
-                        help="Maximum simulated transmission attempts for the semantic message")
+    parser.add_argument("--communication-attempts", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--learn", action="store_true",
+                        help="Update and save the RIS Q-table; inference is the default")
     args = parser.parse_args()
     regions = load_regions()
     region_id = args.region
@@ -126,7 +167,13 @@ def main():
         region_id = input("Enter region ID: ").strip()
     if args.communication_attempts < 1:
         parser.error("--communication-attempts must be at least 1")
-    run(get_region(region_id), communication_attempts=args.communication_attempts)
+    run(
+        get_region(region_id),
+        communication_attempts=args.communication_attempts,
+        seed=args.seed,
+        learn=args.learn,
+    )
+
 
 if __name__ == "__main__":
     main()
