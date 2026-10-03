@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta, timezone
-
 import numpy as np
 
 from ris_agent import QLearningRISAgent
@@ -108,8 +106,7 @@ def test_inference_does_not_change_q_table():
     env = RISEnvironment(seed=1, max_steps=1)
     observation = env.reset(priority="HIGH")
     action = agent.choose_action(observation, env.action_mask(), explore=False)
-    next_obs, reward, done, _ = env.step(action)
-    agent.load if False else None
+    next_obs, _, _, _ = env.step(action)
     assert np.array_equal(agent.q, before)
     assert next_obs["simulation_only"]
 
