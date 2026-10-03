@@ -15,6 +15,7 @@ class RISEnvironment:
     def __init__(self, n_channels: int = 3, n_ris_configs: int = 8,
                  n_ris_elements: int = 8, seed: int | None = None,
                  max_steps: int = 80):
+        self.seed = seed
         self.rng = np.random.default_rng(seed)
         self.n_channels = n_channels
         self.n_ris_configs = n_ris_configs
@@ -26,6 +27,11 @@ class RISEnvironment:
         self.priority = "LOW"
         self.step_count = 0
         self.measurements = None
+
+    def reseed(self, seed: int) -> None:
+        self.seed = seed
+        self.rng = np.random.default_rng(seed)
+        self.simulator.rng = np.random.default_rng(seed)
 
     def reset(self, priority: str | None = None):
         if priority is None:
@@ -77,7 +83,6 @@ class RISEnvironment:
         receiver_packet = None
         channel_condition = None
         if action == self.wait_action:
-            # Queue/store-and-forward: no false claim of a successful delivery.
             reward = -0.30 * priority_weight
         else:
             selected_channel, selected_ris = divmod(action, self.n_ris_configs)
@@ -97,7 +102,6 @@ class RISEnvironment:
             if delivered:
                 receiver_packet = packet
             changed_ris = selected_ris != self.current_ris
-            # Simulated semantic delivery reward, delay penalty and reconfiguration cost.
             reward = priority_weight * (1.0 if delivered else -1.25)
             reward -= priority_weight * (latency_ms / 250.0)
             reward -= RIS_SWITCH_PENALTY if changed_ris else 0.0
@@ -112,8 +116,10 @@ class RISEnvironment:
         info = {
             "delivered": delivered,
             "selected_channel": selected_channel,
-            "channel_candidate": (f"sim_candidate_{selected_channel + 1}"
-                                  if selected_channel is not None else None),
+            "channel_candidate": (
+                f"sim_candidate_{selected_channel + 1}"
+                if selected_channel is not None else None
+            ),
             "selected_ris_config": selected_ris,
             "channel_condition": channel_condition,
             "snr_db": snr_db,
@@ -129,7 +135,6 @@ class RISEnvironment:
         return self.observe(), float(reward), done, info
 
     def greedy_baseline_action(self) -> int:
-        """Myopic best expected-utility choice from current simulated metrics."""
         available = self.action_mask()
         if available[self.wait_action]:
             return self.wait_action

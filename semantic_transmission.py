@@ -12,13 +12,23 @@ PRIORITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
 
 def priority_for_message(priorities: dict) -> str:
-    available = [item["priority"] for item in priorities.values() if item.get("available")]
+    available = [
+        item["priority"]
+        for item in priorities.values()
+        if item.get("available") and item.get("priority") in PRIORITY_ORDER
+    ]
     return max(available, key=PRIORITY_ORDER.get) if available else "LOW"
 
 
-def transmit_semantic_message(packet: str, priorities: dict, policy_path: str | Path,
-                              max_attempts: int = 5, seed: int = 2026) -> dict:
-    """Transmit one semantic packet, feed simulated outcomes back, and save Q updates."""
+def transmit_semantic_message(
+    packet: str,
+    priorities: dict,
+    policy_path: str | Path,
+    max_attempts: int = 5,
+    seed: int = 2026,
+    learn: bool = False,
+) -> dict:
+    """Transmit one semantic packet; learning is opt-in."""
     if not packet:
         raise ValueError("Semantic packet must not be empty")
     if max_attempts < 1:
@@ -32,8 +42,6 @@ def transmit_semantic_message(packet: str, priorities: dict, policy_path: str | 
             "Run evaluate_ris_agent.py first to train the software policy."
         )
     agent.load(policy_path)
-    # Inference uses the learned policy without random exploration. The feedback
-    # from this packet still updates the saved Q-table for later runs.
     agent.epsilon = 0.0
 
     env = RISEnvironment(seed=seed, max_steps=max_attempts)
@@ -44,11 +52,20 @@ def transmit_semantic_message(packet: str, priorities: dict, policy_path: str | 
 
     for attempt_number in range(1, max_attempts + 1):
         state = agent.encode_state(observation)
-        action = agent.choose_action(observation, env.action_mask(), explore=False)
-        next_observation, reward, env_done, info = env.step(action, packet=packet)
-        terminal = bool(info["delivered"] or env_done or attempt_number == max_attempts)
+        action = agent.choose_action(
+            observation, env.action_mask(), explore=False
+        )
+        next_observation, reward, env_done, info = env.step(
+            action, packet=packet
+        )
+        terminal = bool(
+            info["delivered"] or env_done or attempt_number == max_attempts
+        )
         next_state = agent.encode_state(next_observation)
-        agent.learn(state, action, reward, next_state, env.action_mask(), terminal)
+        if learn:
+            agent.learn(
+                state, action, reward, next_state, env.action_mask(), terminal
+            )
         attempts.append({
             "attempt": attempt_number,
             "candidate": info["channel_candidate"],
@@ -65,7 +82,9 @@ def transmit_semantic_message(packet: str, priorities: dict, policy_path: str | 
             received = info["receiver_packet"]
             break
 
-    agent.save(policy_path)
+    if learn:
+        agent.save(policy_path)
+
     return {
         "priority": priority,
         "delivered": received == packet,
@@ -73,4 +92,6 @@ def transmit_semantic_message(packet: str, priorities: dict, policy_path: str | 
         "attempts": attempts,
         "policy_path": str(policy_path),
         "simulation_only": True,
+        "learned": learn,
+        "used_seed": seed,
     }

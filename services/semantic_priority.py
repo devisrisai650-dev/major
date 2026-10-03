@@ -1,37 +1,133 @@
+from __future__ import annotations
+
+from pathlib import Path
+import json
+
+
+_PRIORITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+_DEFAULT_RULES = {
+    "rainfall_current": "MEDIUM",
+    "rainfall_last_6h": "MEDIUM",
+    "water_level": "HIGH",
+    "water_level_rate": "HIGH",
+    "river_discharge_forecast": "MEDIUM",
+}
+
+
+def _load_rules() -> dict[str, str]:
+    path = Path(__file__).resolve().parents[1] / "config" / "semantic_priority.json"
+    if not path.exists():
+        return dict(_DEFAULT_RULES)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rules = data.get("field_priority", {})
+        return {
+            key: value for key, value in rules.items()
+            if key in _DEFAULT_RULES and value in _PRIORITY_ORDER
+        } or dict(_DEFAULT_RULES)
+    except (OSError, ValueError, TypeError):
+        return dict(_DEFAULT_RULES)
+
+
 def build_semantic_priorities(weather, flood_state_data):
     rainfall = flood_state_data["rainfall"]
     river = flood_state_data["river"]
     water = flood_state_data["water_level"]
-    assessment = flood_state_data["flood_assessment"]
+    rules = _load_rules()
+
     items = {
-        "assessment_status": (assessment["status"], True, 10),
-        "assessment_reason": (assessment["reason"], True, 10),
-        "rainfall_current": (rainfall["current_rain_mm"], rainfall["current_rain_mm"] is not None, 4),
-        "rainfall_last_6h": (rainfall["last_6h_precipitation_mm"], rainfall["last_6h_precipitation_mm"] is not None, 5),
-        "water_level": (water["current_m"], water["available"], 8 if water["available"] else 10),
-        "water_level_rate": (water["rate_of_change_m_per_hour"], water["rate_of_change_m_per_hour"] is not None, 8 if water["rate_of_change_m_per_hour"] is not None else 10),
-        "river_discharge_forecast": (river["discharge_m3s"], river["available"], 3)
+        "rainfall_current": (
+            rainfall.get("current_rain_mm"),
+            rainfall.get("current_rain_mm") is not None,
+            rules["rainfall_current"],
+            "mm",
+            "Open-Meteo model-derived current weather",
+            "model_derived",
+            rainfall.get("current_time"),
+        ),
+        "rainfall_last_6h": (
+            rainfall.get("last_6h_precipitation_mm"),
+            rainfall.get("last_6h_precipitation_mm") is not None,
+            rules["rainfall_last_6h"],
+            "mm",
+            "Open-Meteo model-derived hourly precipitation",
+            "model_derived",
+            rainfall.get("current_time"),
+        ),
+        "water_level": (
+            water.get("current_m"),
+            bool(water.get("available")),
+            rules["water_level"],
+            "m",
+            f"configured gauge replay: {water.get('station')}",
+            "qc_passed" if water.get("available") else "unavailable",
+            water.get("current_time"),
+        ),
+        "water_level_rate": (
+            water.get("rate_of_change_m_per_hour"),
+            water.get("rate_of_change_m_per_hour") is not None,
+            rules["water_level_rate"],
+            "m/h",
+            f"configured gauge replay: {water.get('station')}",
+            "qc_passed" if water.get("rate_of_change_m_per_hour") is not None else "unavailable",
+            water.get("current_time"),
+        ),
+        "river_discharge_forecast": (
+            river.get("discharge_m3s"),
+            bool(river.get("available")),
+            rules["river_discharge_forecast"],
+            "m3/s",
+            "Open-Meteo modeled daily river-discharge forecast",
+            river.get("data_type", "unavailable"),
+            river.get("time"),
+        ),
     }
+
     out = {}
-    for name, (value, available, score) in items.items():
-        priority = "CRITICAL" if score >= 9 else "HIGH" if score >= 6 else "MEDIUM" if score >= 3 else "LOW"
-        out[name] = {"value": value, "available": available, "score": score, "priority": priority}
+    for name, (value, available, priority, unit, source, quality, timestamp) in items.items():
+        score = _PRIORITY_ORDER[priority]
+        out[name] = {
+            "value": value,
+            "available": available,
+            "score": score,
+            "priority": priority if available else "LOW",
+            "unit": unit,
+            "source": source,
+            "quality": quality,
+            "timestamp": timestamp,
+        }
     return out
 
-def select_transmission_parameters(priorities, minimum_priority="HIGH"):
-    order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-    if minimum_priority not in order:
+
+def select_transmission_parameters(priorities, minimum_priority="MEDIUM"):
+    if minimum_priority not in _PRIORITY_ORDER:
         raise ValueError(f"Unknown priority: {minimum_priority}")
-    threshold = order[minimum_priority]
-    return {key: item for key, item in priorities.items()
-            if item["available"] and order[item["priority"]] >= threshold}
+    threshold = _PRIORITY_ORDER[minimum_priority]
+    return {
+        key: item for key, item in priorities.items()
+        if item["available"] and _PRIORITY_ORDER[item["priority"]] >= threshold
+    }
+
 
 def generate_semantic_message(region_name, flood_state_data, selected_parameters):
-    parts = [f"REGION={region_name}", "FLOOD_ASSESSMENT=NOT_ASSESSED"]
+    parts = [
+        f"REGION={region_name}",
+        "FLOOD_ASSESSMENT=NOT_ASSESSED",
+    ]
     for key, item in selected_parameters.items():
-        if key not in ("assessment_status", "assessment_reason"):
-            parts.append(f"{key.upper()}={item['value']}")
+        value = item["value"]
+        unit = item.get("unit", "")
+        timestamp = item.get("timestamp") or ""
+        source = item.get("source", "unknown")
+        quality = item.get("quality", "unknown")
+        suffix = f" {unit}" if unit else ""
+        if timestamp:
+            suffix += f" @ {timestamp}"
+        parts.append(
+            f"{key.upper()}={value}{suffix};SOURCE={source};QUALITY={quality}"
+        )
     return " | ".join(parts)
+
 
 def calculate_semantic_compression(total_parameters, transmitted_parameters):
     if total_parameters <= 0:
