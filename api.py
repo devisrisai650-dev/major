@@ -14,6 +14,7 @@ from services.region_manager import get_region, load_regions
 from services.weather_service import get_weather_data
 from services.flood_api import get_discharge_analysis
 from services.water_level import get_water_level_analysis
+from services.gauge_provider import CsvReplayProvider
 from services.flood_state import analyze_flood_state
 from services.semantic_priority import (
     build_semantic_priorities,
@@ -75,7 +76,7 @@ def region_detail(region_id: str) -> dict[str, Any]:
         region = get_region(region_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    water = get_water_level_analysis(region)
+    water = CsvReplayProvider().get_water_level(region)
     return {"region": region, "water_level_source": water}
 
 
@@ -100,7 +101,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
         ) from exc
 
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
-    water = get_water_level_analysis(region)
+    water = CsvReplayProvider().get_water_level(region)
     analysis = analyze_flood_state(weather, discharge, water)
     priorities = build_semantic_priorities(weather, analysis)
     selected = select_transmission_parameters(priorities)
