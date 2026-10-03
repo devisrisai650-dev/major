@@ -43,6 +43,7 @@ def build_semantic_priorities(weather, flood_state_data):
             "mm",
             "Open-Meteo model-derived current weather",
             "model_derived",
+            rainfall.get("current_time"),
         ),
         "rainfall_last_6h": (
             rainfall.get("last_6h_precipitation_mm"),
@@ -51,6 +52,7 @@ def build_semantic_priorities(weather, flood_state_data):
             "mm",
             "Open-Meteo model-derived hourly precipitation",
             "model_derived",
+            rainfall.get("current_time"),
         ),
         "water_level": (
             water.get("current_m"),
@@ -59,6 +61,7 @@ def build_semantic_priorities(weather, flood_state_data):
             "m",
             f"configured gauge replay: {water.get('station')}",
             "qc_passed" if water.get("available") else "unavailable",
+            water.get("current_time"),
         ),
         "water_level_rate": (
             water.get("rate_of_change_m_per_hour"),
@@ -67,6 +70,7 @@ def build_semantic_priorities(weather, flood_state_data):
             "m/h",
             f"configured gauge replay: {water.get('station')}",
             "qc_passed" if water.get("rate_of_change_m_per_hour") is not None else "unavailable",
+            water.get("current_time"),
         ),
         "river_discharge_forecast": (
             river.get("discharge_m3s"),
@@ -75,11 +79,12 @@ def build_semantic_priorities(weather, flood_state_data):
             "m3/s",
             "Open-Meteo modeled daily river-discharge forecast",
             river.get("data_type", "unavailable"),
+            river.get("time"),
         ),
     }
 
     out = {}
-    for name, (value, available, priority, unit, source, quality) in items.items():
+    for name, (value, available, priority, unit, source, quality, timestamp) in items.items():
         score = _PRIORITY_ORDER[priority]
         out[name] = {
             "value": value,
@@ -89,6 +94,7 @@ def build_semantic_priorities(weather, flood_state_data):
             "unit": unit,
             "source": source,
             "quality": quality,
+            "timestamp": timestamp,
         }
     return out
 
