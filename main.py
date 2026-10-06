@@ -133,7 +133,7 @@ def run(region, communication_attempts=5, seed=2026, learn=False):
 
     channel = predict_channel(None, None, None, None, None)
     print("\nCHANNEL MODEL")
-    print(f"Rician K: {show(channel.get('rician_k'))}")
+    print(f"Rician K (dB): {show(channel.get('rician_k_db'))}")
     if not channel["available"]:
         print(channel["reason"])
     print("Channel condition bands (K-factor rules):")
