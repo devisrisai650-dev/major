@@ -32,7 +32,7 @@ class RISEnvironment:
         self.priority = "LOW"
         self.step_count = 0
         self.measurements = None
-        self._history = deque(maxlen=max(2, observation_delay + 1))
+        self._history = deque(maxlen=max(2, observation_delay + 1))\n        self._last_observation = None
 
     def reseed(self, seed):
         self.seed = seed
@@ -92,7 +92,7 @@ class RISEnvironment:
 
     def action_mask(self):
         mask = np.zeros(self.n_actions, dtype=bool)
-        mask[:self.wait_action] = self.observe()["available"].reshape(-1)
+        observation = self._last_observation if self._last_observation is not None else self.observe()\n        mask[:self.wait_action] = observation["available"].reshape(-1)
         if not mask.any():
             mask[self.wait_action] = True
         return mask
