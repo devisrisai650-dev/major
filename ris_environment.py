@@ -1,20 +1,22 @@
-"""Discrete software environment for channel selection and virtual RIS control."""
-
+"""Software-only partially observable channel/RIS simulation environment."""
 from __future__ import annotations
-
+from collections import deque
 import numpy as np
-
 from channel_simulator import ChannelSimulator
-
 
 PRIORITY_WEIGHT = {"LOW": 1.0, "MEDIUM": 1.5, "HIGH": 2.5, "CRITICAL": 4.0}
 RIS_SWITCH_PENALTY = 0.20
 
-
 class RISEnvironment:
-    def __init__(self, n_channels: int = 3, n_ris_configs: int = 8,
-                 n_ris_elements: int = 8, seed: int | None = None,
-                 max_steps: int = 80):
+    """Virtual channel/RIS environment; every radio value is simulated."""
+
+    def __init__(self, n_channels=3, n_ris_configs=8, n_ris_elements=8,
+                 seed=None, max_steps=80, observation_mode="partial",
+                 snr_noise_std_db=1.5, observation_delay=1):
+        if observation_mode not in {"partial", "oracle"}:
+            raise ValueError("observation_mode must be 'partial' or 'oracle'")
+        if snr_noise_std_db < 0 or observation_delay < 0:
+            raise ValueError("observation noise and delay must be non-negative")
         self.seed = seed
         self.rng = np.random.default_rng(seed)
         self.n_channels = n_channels
@@ -22,18 +24,25 @@ class RISEnvironment:
         self.max_steps = max_steps
         self.wait_action = n_channels * n_ris_configs
         self.n_actions = self.wait_action + 1
+        self.observation_mode = observation_mode
+        self.snr_noise_std_db = snr_noise_std_db
+        self.observation_delay = observation_delay
         self.simulator = ChannelSimulator(n_channels, n_ris_configs, n_ris_elements, seed)
         self.current_ris = 0
         self.priority = "LOW"
         self.step_count = 0
         self.measurements = None
+        self._history = deque(maxlen=max(2, observation_delay + 1))
 
-    def reseed(self, seed: int) -> None:
+    def reseed(self, seed):
         self.seed = seed
         self.rng = np.random.default_rng(seed)
-        self.simulator.rng = np.random.default_rng(seed)
+        self.simulator = ChannelSimulator(
+            self.n_channels, self.n_ris_configs, self.simulator.n_ris_elements, seed
+        )
+        self._history.clear()
 
-    def reset(self, priority: str | None = None):
+    def reset(self, priority=None):
         if priority is None:
             priority = str(self.rng.choice(list(PRIORITY_WEIGHT)))
         if priority not in PRIORITY_WEIGHT:
@@ -42,68 +51,93 @@ class RISEnvironment:
         self.current_ris = 0
         self.step_count = 0
         self.measurements = self.simulator.reset()
+        self._history.clear()
+        self._history.append(self.measurements)
         return self.observe()
 
-    def observe(self) -> dict:
+    def _observed_measurements(self):
+        if self.observation_mode == "oracle":
+            source = self.measurements
+        elif len(self._history) <= self.observation_delay:
+            source = self._history[0]
+        else:
+            source = list(self._history)[-(self.observation_delay + 1)]
+        result = {key: value.copy() for key, value in source.items()}
+        if self.observation_mode == "partial":
+            result["snr_db"] += self.rng.normal(
+                0.0, self.snr_noise_std_db, result["snr_db"].shape
+            )
+            result["success_probability"] = np.clip(
+                1.0 / (1.0 + np.exp(-((result["snr_db"] - 2.0) / 2.5))), 0.0, 1.0
+            )
+            result["available"] = result["snr_db"] >= -3.0
+        return result
+
+    def observe(self):
+        observed = self._observed_measurements()
         return {
-            "snr_db": self.measurements["snr_db"].copy(),
-            "success_probability": self.measurements["success_probability"].copy(),
-            "latency_ms": self.measurements["latency_ms"].copy(),
-            "throughput_mbps": self.measurements["throughput_mbps"].copy(),
-            "available": self.measurements["available"].copy(),
+            "snr_db": observed["snr_db"].copy(),
+            "success_probability": observed["success_probability"].copy(),
+            "latency_ms": observed["latency_ms"].copy(),
+            "throughput_mbps": observed["throughput_mbps"].copy(),
+            "available": observed["available"].copy(),
             "current_ris_config": self.current_ris,
             "priority": self.priority,
             "step": self.step_count,
+            "observation_mode": self.observation_mode,
+            "observation_noise_std_db": self.snr_noise_std_db,
+            "observation_delay_steps": self.observation_delay,
             "simulation_only": True,
         }
 
-    def action_mask(self) -> np.ndarray:
+    def action_mask(self):
         mask = np.zeros(self.n_actions, dtype=bool)
-        mask[:self.wait_action] = self.measurements["available"].reshape(-1)
+        mask[:self.wait_action] = self.observe()["available"].reshape(-1)
         if not mask.any():
             mask[self.wait_action] = True
         return mask
 
-    def step(self, action: int, packet: str | None = None):
+    def step(self, action, packet=None):
         if not 0 <= int(action) < self.n_actions:
             raise ValueError(f"Action must be in [0, {self.n_actions - 1}]")
         action = int(action)
         mask = self.action_mask()
         if not mask[action]:
-            raise ValueError("Selected action is unavailable under the current simulated measurements")
+            raise ValueError("Selected action is unavailable under the current observation")
 
-        priority_weight = PRIORITY_WEIGHT[self.priority]
+        weight = PRIORITY_WEIGHT[self.priority]
         changed_ris = False
         delivered = False
         selected_channel = None
         selected_ris = self.current_ris
-        snr_db = None
-        latency_ms = None
+        snr_db = latency_ms = None
         throughput_mbps = 0.0
         receiver_packet = None
         channel_condition = None
+
         if action == self.wait_action:
-            reward = -0.30 * priority_weight
+            reward = -0.30 * weight
         else:
             selected_channel, selected_ris = divmod(action, self.n_ris_configs)
             snr_db = float(self.measurements["snr_db"][selected_channel, selected_ris])
-            p_success = float(self.measurements["success_probability"][selected_channel, selected_ris])
+            p_success = float(
+                self.measurements["success_probability"][selected_channel, selected_ris]
+            )
             latency_ms = float(self.measurements["latency_ms"][selected_channel, selected_ris])
-            throughput_mbps = float(self.measurements["throughput_mbps"][selected_channel, selected_ris])
+            throughput_mbps = float(
+                self.measurements["throughput_mbps"][selected_channel, selected_ris]
+            )
             delivered = bool(self.rng.random() < p_success)
-            if snr_db >= 10.0:
-                channel_condition = "GOOD"
-            elif snr_db >= 5.0:
-                channel_condition = "MODERATE"
-            elif snr_db >= 0.0:
-                channel_condition = "POOR"
-            else:
-                channel_condition = "SEVERE"
+            channel_condition = (
+                "GOOD" if snr_db >= 10 else
+                "MODERATE" if snr_db >= 5 else
+                "POOR" if snr_db >= 0 else "SEVERE"
+            )
             if delivered:
                 receiver_packet = packet
             changed_ris = selected_ris != self.current_ris
-            reward = priority_weight * (1.0 if delivered else -1.25)
-            reward -= priority_weight * (latency_ms / 250.0)
+            reward = weight * (1.0 if delivered else -1.25)
+            reward -= weight * latency_ms / 250.0
             reward -= RIS_SWITCH_PENALTY if changed_ris else 0.0
             if delivered:
                 reward += min(0.15, throughput_mbps / 100.0)
@@ -112,13 +146,13 @@ class RISEnvironment:
         self.step_count += 1
         self.simulator.advance()
         self.measurements = self.simulator.measure()
+        self._history.append(self.measurements)
         done = self.step_count >= self.max_steps
         info = {
             "delivered": delivered,
             "selected_channel": selected_channel,
             "channel_candidate": (
-                f"sim_candidate_{selected_channel + 1}"
-                if selected_channel is not None else None
+                f"sim_candidate_{selected_channel + 1}" if selected_channel is not None else None
             ),
             "selected_ris_config": selected_ris,
             "channel_condition": channel_condition,
@@ -131,23 +165,25 @@ class RISEnvironment:
             "receiver_packet": receiver_packet,
             "priority": self.priority,
             "simulation_only": True,
+            "observation_mode": self.observation_mode,
         }
         return self.observe(), float(reward), done, info
 
-    def greedy_baseline_action(self) -> int:
-        available = self.action_mask()
-        if available[self.wait_action]:
-            return self.wait_action
-        p = self.measurements["success_probability"].reshape(-1)
-        latency = self.measurements["latency_ms"].reshape(-1)
-        throughput = self.measurements["throughput_mbps"].reshape(-1)
+    def greedy_baseline_action(self, observation=None):
+        observation = observation or self.observe()
+        available = observation["available"].reshape(-1)
+        p = observation["success_probability"].reshape(-1)
+        latency = observation["latency_ms"].reshape(-1)
+        throughput = observation["throughput_mbps"].reshape(-1)
+        weight = PRIORITY_WEIGHT[self.priority]
         actions = np.arange(self.wait_action)
         change_cost = np.array([
-            RIS_SWITCH_PENALTY if (a % self.n_ris_configs) != self.current_ris else 0.0
+            RIS_SWITCH_PENALTY if a % self.n_ris_configs != self.current_ris else 0.0
             for a in actions
         ])
-        weight = PRIORITY_WEIGHT[self.priority]
         utility = weight * (2.25 * p - 1.25) - weight * latency / 250.0
         utility += np.minimum(0.15, throughput / 100.0) * p - change_cost
-        utility[~available[:self.wait_action]] = -np.inf
+        utility[~available] = -np.inf
+        if not np.isfinite(utility).any():
+            return self.wait_action
         return int(np.argmax(utility))
