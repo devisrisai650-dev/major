@@ -1,20 +1,16 @@
-"""Tabular Q-learning agent for the discrete software RIS environment."""
-
+"""Tabular Q-learning agent for the software-only RIS environment."""
 from __future__ import annotations
-
 import os
 from pathlib import Path
-
 import numpy as np
-
 from ris_environment import PRIORITY_WEIGHT, RIS_SWITCH_PENALTY
 
-
 class QLearningRISAgent:
-    def __init__(self, n_channels: int = 3, n_ris_configs: int = 8,
-                 learning_rate: float = 0.12, discount: float = 0.92,
-                 epsilon: float = 1.0, epsilon_min: float = 0.04,
-                 epsilon_decay: float = 0.996, seed: int | None = None):
+    def __init__(self, n_channels=3, n_ris_configs=8, learning_rate=0.12,
+                 discount=0.92, epsilon=1.0, epsilon_min=0.04,
+                 epsilon_decay=0.996, learned_value_weight=0.05, seed=None):
+        if learned_value_weight < 0:
+            raise ValueError("learned_value_weight must be non-negative")
         self.n_channels = n_channels
         self.n_ris_configs = n_ris_configs
         self.wait_action = n_channels * n_ris_configs
@@ -24,13 +20,13 @@ class QLearningRISAgent:
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
-        self.learned_value_weight = 0.05
+        self.learned_value_weight = learned_value_weight
         self.rng = np.random.default_rng(seed)
         self.priority_index = {name: i for i, name in enumerate(PRIORITY_WEIGHT)}
         self.n_states = (4 ** n_channels) * n_ris_configs * len(PRIORITY_WEIGHT)
         self.q = np.zeros((self.n_states, self.n_actions), dtype=np.float32)
 
-    def encode_state(self, observation: dict) -> int:
+    def encode_state(self, observation):
         current_ris = int(observation["current_ris_config"])
         priority = self.priority_index[observation["priority"]]
         snr = observation["snr_db"][:, current_ris]
@@ -43,17 +39,15 @@ class QLearningRISAgent:
         return ((priority * self.n_ris_configs + current_ris) * (4 ** self.n_channels)
                 + channel_code)
 
-    def choose_action(self, observation: dict, action_mask: np.ndarray,
-                      explore: bool = False) -> int:
+    def choose_action(self, observation, action_mask, explore=False):
         valid = np.flatnonzero(action_mask)
         if valid.size == 0:
             return self.wait_action
         state = self.encode_state(observation)
         if explore and self.rng.random() < self.epsilon:
             return int(self.rng.choice(valid))
-        expected_reward = np.full(
-            valid.size, -0.30 * PRIORITY_WEIGHT[observation["priority"]]
-        )
+        weight = PRIORITY_WEIGHT[observation["priority"]]
+        expected_reward = np.full(valid.size, -0.30 * weight)
         for i, action in enumerate(valid):
             if action == self.wait_action:
                 continue
@@ -61,12 +55,9 @@ class QLearningRISAgent:
             probability = float(observation["success_probability"][channel, ris_config])
             latency = float(observation["latency_ms"][channel, ris_config])
             throughput = float(observation["throughput_mbps"][channel, ris_config])
-            weight = PRIORITY_WEIGHT[observation["priority"]]
-            switch_cost = (
-                RIS_SWITCH_PENALTY
-                if ris_config != int(observation["current_ris_config"])
-                else 0.0
-            )
+            switch_cost = RIS_SWITCH_PENALTY if ris_config != int(
+                observation["current_ris_config"]
+            ) else 0.0
             expected_reward[i] = (
                 weight * (2.25 * probability - 1.25)
                 - weight * latency / 250.0
@@ -82,8 +73,7 @@ class QLearningRISAgent:
         values = expected_reward + self.learned_value_weight * learned
         return int(valid[int(np.argmax(values))])
 
-    def learn(self, state: int, action: int, reward: float,
-              next_state: int, next_mask: np.ndarray, done: bool) -> None:
+    def learn(self, state, action, reward, next_state, next_mask, done):
         future = 0.0
         valid_next = np.flatnonzero(next_mask)
         if not done and valid_next.size:
@@ -91,22 +81,25 @@ class QLearningRISAgent:
         target = reward + self.discount * future
         self.q[state, action] += self.learning_rate * (target - self.q[state, action])
 
-    def decay_exploration(self) -> None:
+    def decay_exploration(self):
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
-    def save(self, path: str | Path) -> None:
+    def save(self, path):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_name(f".{path.name}.tmp.npz")
-        np.savez_compressed(
-            temp,
-            q=self.q,
-            n_channels=self.n_channels,
-            n_ris_configs=self.n_ris_configs,
-        )
-        os.replace(temp, path)
+        try:
+            np.savez_compressed(
+                temp, q=self.q, n_channels=self.n_channels,
+                n_ris_configs=self.n_ris_configs,
+                learned_value_weight=self.learned_value_weight,
+            )
+            os.replace(temp, path)
+        finally:
+            if temp.exists():
+                temp.unlink()
 
-    def load(self, path: str | Path) -> None:
+    def load(self, path):
         with np.load(path) as saved:
             if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
                 raise ValueError("Saved Q-table dimensions do not match this environment")
@@ -114,12 +107,10 @@ class QLearningRISAgent:
             if table.shape != self.q.shape:
                 raise ValueError("Saved Q-table has an unexpected shape")
             self.q[:] = table
+            if "learned_value_weight" in saved:
+                self.learned_value_weight = float(saved["learned_value_weight"])
 
-
-def train_agent(agent: QLearningRISAgent, env, episodes: int = 1200,
-                max_steps: int | None = None) -> list[float]:
-    from ris_environment import PRIORITY_WEIGHT
-
+def train_agent(agent, env, episodes=1200, max_steps=None):
     episode_rewards = []
     priorities = list(PRIORITY_WEIGHT)
     horizon = max_steps or env.max_steps
