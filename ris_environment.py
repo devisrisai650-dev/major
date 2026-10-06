@@ -62,7 +62,7 @@ class RISEnvironment:
             source = self._history[0]
         else:
             source = list(self._history)[-(self.observation_delay + 1)]
-        result = {key: value.copy() for key, value in source.items()}
+        result = {key: value.copy() if hasattr(value, "copy") else value for key, value in source.items()}
         if self.observation_mode == "partial":
             result["snr_db"] += self.rng.normal(
                 0.0, self.snr_noise_std_db, result["snr_db"].shape
