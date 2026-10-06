@@ -1,5 +1,3 @@
-import csv
-from pathlib import Path
 from evaluate_ris_agent import bootstrap_ci, POLICIES, SCENARIOS
 
 def test_bootstrap_ci_is_bounded():
