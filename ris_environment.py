@@ -103,7 +103,6 @@ class RISEnvironment:
         if not 0 <= int(action) < self.n_actions:
             raise ValueError(f"Action must be in [0, {self.n_actions - 1}]")
         action = int(action)
-        mask = self.action_mask()
         weight = PRIORITY_WEIGHT[self.priority]
         changed_ris = False
         delivered = False
