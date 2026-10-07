@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: floodai-api-config
+  namespace: floodai
+data:
+  FLOODAI_ENV: kubernetes

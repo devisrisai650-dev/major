@@ -13,7 +13,7 @@ FloodAI is a reproducible research prototype that combines regional environmenta
 
 ## Architecture
 
-`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> virtual channel/RIS -> evaluation -> API/dashboard`
+`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> virtual channel/RIS -> evaluation -> API/dashboard -> Docker/Kubernetes -> Prometheus/Grafana`
 
 ## Reproducible run order
 
@@ -55,7 +55,7 @@ Results must be interpreted as simulated results. Whether the learned policy bea
 
 If the required measured channel features are unavailable to the live pipeline, the predictor returns an explicit unavailable result instead of inventing inputs.
 
-## API
+## Cloud-native deployment\n\nThe deployment layer packages the existing software-only pipeline with Docker and Kubernetes. FastAPI remains the application boundary; XGBoost and Q-learning remain the existing research components. Prometheus collects API/pipeline metrics and Grafana provides operational dashboards. Kubernetes provides health checks, replica management and CPU-based autoscaling. These technologies do not make the simulated wireless channel a physical radio system.\n\n### Docker Compose\n\n```powershell\ndocker compose up --build\n```\n\n- Dashboard/API: http://localhost:8000\n- Prometheus: http://localhost:9090\n- Grafana: http://localhost:3000\n\n### Kubernetes\n\nSee `k8s/README.md`. With Docker Desktop Kubernetes enabled:\n\n```powershell\ndocker build -t floodai-api:latest .\nkubectl apply -f k8s/\nkubectl -n floodai get pods\n```\n\nThe HPA requires a Kubernetes metrics server. Production deployment also needs registry-backed images, TLS, authentication, secrets and persistent monitoring storage.\n\n## API
 
 Start:
 
