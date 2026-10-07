@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: FloodAI
+    orgId: 1
+    folder: FloodAI
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/provisioning/dashboards
