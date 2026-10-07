@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: floodai-api
+  namespace: floodai
+spec:
+  selector:
+    app: floodai-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+  type: ClusterIP
