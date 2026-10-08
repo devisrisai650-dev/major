@@ -1,8 +1,10 @@
-"""Generate and train the synthetic Rician-K predictor used by FloodAI.
-The target is Rician K in dB. The dataset is synthetic and not field calibrated.
-"""
+"""Train the synthetic Rician K-factor model with named reproducible scenarios."""
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
 import json
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -12,20 +14,53 @@ from xgboost import XGBRegressor
 BASE = Path(__file__).resolve().parent
 DATA = BASE / "data"
 MODELS = BASE / "models"
-DATA.mkdir(exist_ok=True)
-MODELS.mkdir(exist_ok=True)
-FEATURES = ["water_depth", "los_obstruction", "debris_density", "flow_velocity", "reflection_dominance"]
+FEATURES = [
+    "water_depth", "los_obstruction", "debris_density",
+    "flow_velocity", "reflection_dominance",
+]
+SCENARIOS = {
+    "baseline": {
+        "water_depth": (0.0, 2.0),
+        "los_obstruction": (0.0, 1.0),
+        "debris_density": (0.0, 1.0),
+        "flow_velocity": (0.0, 2.0),
+        "reflection_dominance": (0.5, 2.5),
+    },
+    "urban_flood": {
+        "water_depth": (0.0, 2.0),
+        "los_obstruction": (0.2, 1.0),
+        "debris_density": (0.1, 1.0),
+        "flow_velocity": (0.0, 2.0),
+        "reflection_dominance": (0.6, 2.5),
+    },
+    "coastal_flood": {
+        "water_depth": (0.2, 2.0),
+        "los_obstruction": (0.0, 0.8),
+        "debris_density": (0.0, 0.8),
+        "flow_velocity": (0.0, 2.0),
+        "reflection_dominance": (0.5, 2.5),
+    },
+}
 SEED = 42
 N = 10000
 
+
 def main():
+    parser = argparse.ArgumentParser(description="Train synthetic Rician K-factor model")
+    parser.add_argument("--scenario", choices=SCENARIOS, default="baseline")
+    args = parser.parse_args()
+
     rng = np.random.default_rng(SEED)
-    water = rng.uniform(0, 2, N)
-    los = rng.uniform(0, 1, N)
-    debris = rng.uniform(0, 1, N)
-    flow = rng.uniform(0, 2, N)
-    reflection = rng.uniform(0.5, 2.5, N)
-    # Synthetic positive linear-domain K relationship; convert to dB without a floor.
+    bounds = SCENARIOS[args.scenario]
+    samples = {
+        feature: rng.uniform(low, high, N)
+        for feature, (low, high) in bounds.items()
+    }
+    water = samples["water_depth"]
+    los = samples["los_obstruction"]
+    debris = samples["debris_density"]
+    flow = samples["flow_velocity"]
+    reflection = samples["reflection_dominance"]
     k_linear = (
         15.0
         * np.exp(-1.35 * water - 2.1 * los - 1.4 * debris - 0.7 * flow)
@@ -34,11 +69,9 @@ def main():
     )
     k_linear *= np.exp(rng.normal(0, 0.055, N))
     k_db = 10.0 * np.log10(k_linear)
-    frame = pd.DataFrame({
-        "water_depth": water, "los_obstruction": los,
-        "debris_density": debris, "flow_velocity": flow,
-        "reflection_dominance": reflection, "rician_k_db": k_db,
-    })
+    frame = pd.DataFrame({**samples, "rician_k_db": k_db})
+    DATA.mkdir(exist_ok=True)
+    MODELS.mkdir(exist_ok=True)
     path = DATA / "channel_training_data_v2.csv"
     frame.to_csv(path, index=False)
     X_train, X_test, y_train, y_test = train_test_split(
@@ -54,6 +87,7 @@ def main():
     metrics = {
         "dataset": "synthetic",
         "target": "Rician K-factor (dB)",
+        "scenario": args.scenario,
         "samples": N,
         "mae_db": float(mean_absolute_error(y_test, pred)),
         "rmse_db": float(np.sqrt(mean_squared_error(y_test, pred))),
@@ -75,8 +109,10 @@ def main():
         json.dumps(metrics, indent=2), encoding="utf-8"
     )
     print("Synthetic channel model v2 trained.")
+    print(f"Scenario: {args.scenario}")
     print(f"Model: {model_path}")
     print(json.dumps(metrics, indent=2))
+
 
 if __name__ == "__main__":
     main()
