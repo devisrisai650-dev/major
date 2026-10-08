@@ -25,6 +25,59 @@ from services.semantic_priority import (
 )
 from services.weather_service import get_weather_data
 
+def _flood_dashboard(analysis, water, weather, discharge):
+    assessment = analysis["flood_assessment"]
+    missing = assessment.get("missing_or_unconfigured", [])
+    rainfall = analysis["rainfall"]
+    river = analysis["river"]
+    gauge = analysis["water_level"]
+    classifications = [
+        rainfall.get("classification"),
+        river.get("classification"),
+        gauge.get("classification"),
+    ]
+    severe = {"VERY_HIGH", "VERY_RAPIDLY_RISING"}
+    elevated = {"HIGH", "RAPIDLY_RISING", "MODERATE"}
+    signal = "HIGH" if any(x in severe for x in classifications) else "ELEVATED" if any(x in elevated for x in classifications) else "LOW"
+    readiness = {
+        "thresholds_verified": not any("verified official" in item for item in missing),
+        "fresh_qc_gauge": bool(gauge.get("available") and gauge.get("is_recent")),
+        "current_rainfall_available": rainfall.get("current_rain_mm") is not None,
+        "complete_6h_rainfall_available": rainfall.get("last_6h_precipitation_mm") is not None,
+        "assessment_ready": bool(assessment.get("complete")),
+    }
+    return {
+        "assessment_status": assessment.get("status", "NOT_ASSESSED"),
+        "assessment_state": assessment.get("state", "NOT_ASSESSED"),
+        "assessment_ready": readiness["assessment_ready"],
+        "environmental_signal": signal,
+        "readiness": readiness,
+        "missing_or_unconfigured": missing,
+        "rainfall": rainfall,
+        "river": river,
+        "water_level": gauge,
+        "message": assessment.get("reason"),
+    }
+
+
+def _communication_kpis(transmission):
+    attempts = transmission.get("attempts", [])
+    delivered = [x for x in attempts if x.get("delivered")]
+    return {
+        "attempt_count": len(attempts),
+        "delivery_rate_percent": 100.0 * len(delivered) / len(attempts) if attempts else 0.0,
+        "critical_delivery_percent": 100.0 if transmission.get("critical_delivered") else 0.0,
+        "sic_success_percent": 100.0 * sum(bool(x.get("sic_success")) for x in attempts) / len(attempts) if attempts else 0.0,
+        "node_availability_percent": 100.0 * sum(bool(x.get("node_available")) for x in attempts) / len(attempts) if attempts else 0.0,
+        "mean_latency_ms": transmission.get("mean_latency_ms"),
+        "mean_aoi_ms": transmission.get("delivery_aoi_ms"),
+        "mean_throughput_mbps": transmission.get("mean_throughput_mbps"),
+        "final_snr_db": attempts[-1].get("snr_db") if attempts else None,
+        "final_user1_sinr_db": attempts[-1].get("user1_sinr_db") if attempts else None,
+        "final_user2_sinr_db": attempts[-1].get("user2_sinr_db") if attempts else None,
+    }
+
+
 def _communication_alert(transmission):
     attempts = transmission.get("attempts", [])
     successful = [item for item in attempts if item.get("delivered")]
@@ -217,12 +270,16 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
         PIPELINE_ERRORS.labels("communication").inc()
         raise HTTPException(status_code=500, detail=f"Simulated communication failed: {exc}") from exc
 
+    flood_dashboard = _flood_dashboard(analysis, water, weather, discharge)
+    communication_kpis = _communication_kpis(transmission)
+
     return {
         "region": region,
         "weather": weather,
         "river_discharge": discharge,
         "water_level": water,
         "flood_assessment": analysis["flood_assessment"],
+        "flood_dashboard": flood_dashboard,
         "flood_indicators": {
             "rainfall": analysis["rainfall"],
             "river": analysis["river"],
@@ -234,6 +291,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
         "semantic_compression_percent": compression,
         "channel_prediction": channel_prediction,
         "communication_alert": _communication_alert(transmission),
+        "communication_kpis": communication_kpis,
         "communication": transmission,
         "provenance": {
             "communication_mode": "software_simulation",
