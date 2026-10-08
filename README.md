@@ -43,7 +43,7 @@ The simulator compares:
 - myopic under noisy/delayed observations
 - perfect-CSI oracle
 
-The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`.
+The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`. Priority-wise latency/AoI results are written to `outputs/ris_priority_summary.csv`, the learned-value 0.0 versus default-weight ablation is written to `outputs/ris_weight_ablation.csv`, and run metadata is written to `outputs/experiment_metadata.json`.
 
 Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, RIS reconfigurations and reward.
 
@@ -51,9 +51,9 @@ Results must be interpreted as simulated results. Whether the learned policy bea
 
 ## Channel model
 
-`train_channel_model.py` generates a synthetic dataset and trains `models/xgboost_rician_model_v2.json`. The target is Rician K-factor in dB without a target floor. The script records the clipped-target fraction and documents the synthetic condition bands.
+`train_channel_model.py` generates a synthetic dataset and trains `models/xgboost_rician_model_v2.json`. The target is Rician K-factor in dB without a target floor. The script records the clipped-target fraction and documents the synthetic condition bands. Named generation scenarios are `baseline`, `urban_flood`, and `coastal_flood`; select one with `--scenario`.
 
-If the required measured channel features are unavailable to the live pipeline, the predictor returns an explicit unavailable result instead of inventing inputs.
+If the required measured channel features are unavailable to the live pipeline, the predictor returns an explicit unavailable result instead of inventing inputs. The model path can be overridden with the `FLOODAI_CHANNEL_MODEL_PATH` environment variable.
 
 ## Cloud-native deployment\n\nThe deployment layer packages the existing software-only pipeline with Docker and Kubernetes. FastAPI remains the application boundary; XGBoost and Q-learning remain the existing research components. Prometheus collects API/pipeline metrics and Grafana provides operational dashboards. Kubernetes provides health checks, replica management and CPU-based autoscaling. These technologies do not make the simulated wireless channel a physical radio system.\n\n### Docker Compose\n\n```powershell\ndocker compose up --build\n```\n\n- Dashboard/API: http://localhost:8000\n- Prometheus: http://localhost:9090\n- Grafana: http://localhost:3000\n\n### Kubernetes\n\nSee `k8s/README.md`. With Docker Desktop Kubernetes enabled:\n\n```powershell\ndocker build -t floodai-api:latest .\nkubectl apply -f k8s/\nkubectl -n floodai get pods\n```\n\nThe HPA requires a Kubernetes metrics server. Production deployment also needs registry-backed images, TLS, authentication, secrets and persistent monitoring storage.\n\n## API
 
