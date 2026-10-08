@@ -53,8 +53,7 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
     env.snr_noise_std_db = SCENARIOS[scenario]["noise"]
     env.observation_delay = SCENARIOS[scenario]["delay"]
     env.channel_context = {"rain_mm": SCENARIOS[scenario]["rain_mm"], "flow_velocity_mps": SCENARIOS[scenario]["flow_velocity_mps"]}
-    env.node_loss_probability = SCENARIOS[scenario]["node_loss"]
-    env._history = __import__("collections").deque(
+    env.    env._history = __import__("collections").deque(
         maxlen=max(2, env.observation_delay + 1)
     )
     observation = env.reset(priority=priority)
@@ -106,8 +105,7 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
         "ris_reconfigurations": reconfigs,
         "mean_reward": float(np.mean(rewards)),
         "cnoma_sic_success_rate": float(np.mean(sic_successes)) if sic_successes else np.nan,
-        "node_availability_rate": float(np.mean(node_available_samples)) if node_available_samples else np.nan,
-        "observation_mode": env.observation_mode,
+        "        "observation_mode": env.observation_mode,
         "observation_noise_std_db": env.snr_noise_std_db,
         "observation_delay_steps": env.observation_delay,
         "simulation_only": True,
@@ -175,8 +173,7 @@ def train_and_evaluate(train_seeds, eval_seeds, episodes, eval_episodes_per_seed
         "delivery_rate", "critical_delivery_rate", "priority_weighted_delivery",
         "mean_latency_ms", "mean_aoi_ms", "mean_snr_db",
         "ris_reconfigurations", "mean_reward", "cnoma_sic_success_rate",
-        "node_availability_rate",
-    ]
+        "    ]
     summary = _aggregate(episode_rows, ["policy", "scenario"], metrics)
     _write_csv(output_dir / "ris_summary.csv", summary)
 
