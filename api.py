@@ -68,7 +68,6 @@ def _communication_kpis(transmission):
         "delivery_rate_percent": 100.0 * len(delivered) / len(attempts) if attempts else 0.0,
         "critical_delivery_percent": 100.0 if transmission.get("critical_delivered") else 0.0,
         "sic_success_percent": 100.0 * sum(bool(x.get("sic_success")) for x in attempts) / len(attempts) if attempts else 0.0,
-        "node_availability_percent": 100.0 * sum(bool(x.get("node_available")) for x in attempts) / len(attempts) if attempts else 0.0,
         "mean_latency_ms": transmission.get("mean_latency_ms"),
         "mean_aoi_ms": transmission.get("delivery_aoi_ms"),
         "mean_throughput_mbps": transmission.get("mean_throughput_mbps"),
@@ -99,9 +98,7 @@ def _communication_alert(transmission):
             "sic_success": all(bool(item.get("sic_success")) for item in successful),
         }
     reason = "Packet delivery failed after retry limit."
-    if last.get("node_available") is False:
-        reason = "Selected simulated communication node became unavailable."
-    elif last.get("sic_success") is False:
+    if last.get("sic_success") is False:
         reason = "CNOMA SIC/decoding failed under the simulated channel."
     return {
         "status": "CRITICAL",
@@ -171,7 +168,6 @@ class RunRequest(BaseModel):
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
     learn: bool = False
-    node_loss_probability: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 @app.get("/api/health")
@@ -261,7 +257,6 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             seed=request.seed,
             learn=request.learn,
             channel_context=simulation_context,
-            node_loss_probability=request.node_loss_probability,
         )
     except FileNotFoundError as exc:
         PIPELINE_ERRORS.labels("model").inc()

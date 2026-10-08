@@ -47,7 +47,7 @@ The oracle is **not** the proposed system. It is an ideal reference that has per
 
 The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`. Priority-wise latency/AoI results are written to `outputs/ris_priority_summary.csv`, the learned-value 0.0 versus default-weight ablation is written to `outputs/ris_weight_ablation.csv`, and run metadata is written to `outputs/experiment_metadata.json`.
 
-Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, SINR, CNOMA SIC success, node availability, RIS reconfigurations and reward.
+Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, SINR, CNOMA SIC success, RIS reconfigurations and reward.
 
 Results must be interpreted as simulated results. Whether the learned policy beats a baseline is determined from the generated CSVs, not from manually entered values.
 
@@ -61,20 +61,18 @@ If the required measured channel features are unavailable to the live pipeline, 
 
 The communication subsystem now includes a two-user software CNOMA model. A selected RIS configuration is combined with one of three power-allocation profiles, followed by superposition, SINR calculation and simplified SIC decoding. The critical semantic stream determines the priority-sensitive delivery objective. This is a software abstraction for reproducible research, not a modem implementation.
 
-The channel simulator includes correlated fading, Rician components, rain attenuation, a Doppler term driven by simulated flow velocity, dynamic node loss, and a virtual RIS phase codebook. Environmental values perturb the simulation; they are not measurements of the radio channel.
+The channel simulator includes correlated fading, Rician components, rain attenuation, a Doppler term driven by simulated flow velocity, and a virtual RIS phase codebook. Environmental values perturb the simulation; they are not measurements of the radio channel.
 
 The API/dashboard exposes a separate **communication alert** with NORMAL, DEGRADED, CRITICAL or OUTAGE states. This must never be interpreted as a flood warning. Flood status remains conservatively gated by the existing official-threshold and QC rules.
 
 ### New research scenarios
 
 - light, moderate and severe environmental/channel conditions
-- dynamic node outage
 - rain attenuation
 - Doppler variation
 - CNOMA SIC success/failure
 - partial observation versus perfect-CSI oracle
 
-The node_loss_probability API parameter is a simulation control. It does not represent a measured probability of physical node failure.
 
 ## Cloud-native deployment
 
