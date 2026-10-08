@@ -13,9 +13,9 @@ from ris_agent import QLearningRISAgent, train_agent
 from ris_environment import PRIORITY_WEIGHT, RISEnvironment
 
 SCENARIOS = {
-    "light": {"noise": 0.75, "delay": 0},
-    "moderate": {"noise": 1.5, "delay": 1},
-    "severe": {"noise": 2.25, "delay": 2},
+    "light": {"noise": 0.75, "delay": 0, "rain_mm": 5.0, "flow_velocity_mps": 0.5, "node_loss": 0.01},
+    "moderate": {"noise": 1.5, "delay": 1, "rain_mm": 25.0, "flow_velocity_mps": 1.0, "node_loss": 0.03},
+    "severe": {"noise": 2.25, "delay": 2, "rain_mm": 60.0, "flow_velocity_mps": 1.8, "node_loss": 0.08},
 }
 POLICIES = ("agent", "random", "fixed", "best_fixed", "myopic_noisy", "oracle")
 
@@ -52,6 +52,8 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
     env.observation_mode = "oracle" if policy == "oracle" else "partial"
     env.snr_noise_std_db = SCENARIOS[scenario]["noise"]
     env.observation_delay = SCENARIOS[scenario]["delay"]
+    env.channel_context = {"rain_mm": SCENARIOS[scenario]["rain_mm"], "flow_velocity_mps": SCENARIOS[scenario]["flow_velocity_mps"]}
+    env.node_loss_probability = SCENARIOS[scenario]["node_loss"]
     env._history = __import__("collections").deque(
         maxlen=max(2, env.observation_delay + 1)
     )
@@ -67,11 +69,15 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
     aoi_samples = []
     reconfigs = 0
     rewards = []
+    sic_successes = []
+    node_available_samples = []
     for _ in range(env.max_steps):
         action = choose_action(env, observation, policy, rng, fixed_action)
         observation, reward, done, info = env.step(action)
         rewards.append(reward)
         reconfigs += int(info["changed_ris"])
+        sic_successes.append(float(bool(info["sic_success"])))
+        node_available_samples.append(float(bool(info["node_available"])))
         if info["delivered"]:
             delivered += 1
             weighted_delivered += PRIORITY_WEIGHT[priority]
@@ -99,6 +105,8 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
         "mean_snr_db": float(np.mean(snr)) if snr else np.nan,
         "ris_reconfigurations": reconfigs,
         "mean_reward": float(np.mean(rewards)),
+        "cnoma_sic_success_rate": float(np.mean(sic_successes)) if sic_successes else np.nan,
+        "node_availability_rate": float(np.mean(node_available_samples)) if node_available_samples else np.nan,
         "observation_mode": env.observation_mode,
         "observation_noise_std_db": env.snr_noise_std_db,
         "observation_delay_steps": env.observation_delay,
@@ -166,7 +174,8 @@ def train_and_evaluate(train_seeds, eval_seeds, episodes, eval_episodes_per_seed
     metrics = [
         "delivery_rate", "critical_delivery_rate", "priority_weighted_delivery",
         "mean_latency_ms", "mean_aoi_ms", "mean_snr_db",
-        "ris_reconfigurations", "mean_reward",
+        "ris_reconfigurations", "mean_reward", "cnoma_sic_success_rate",
+        "node_availability_rate",
     ]
     summary = _aggregate(episode_rows, ["policy", "scenario"], metrics)
     _write_csv(output_dir / "ris_summary.csv", summary)
@@ -174,7 +183,7 @@ def train_and_evaluate(train_seeds, eval_seeds, episodes, eval_episodes_per_seed
     priority_summary = _aggregate(
         episode_rows,
         ["policy", "scenario", "priority"],
-        ["delivery_rate", "mean_latency_ms", "mean_aoi_ms", "priority_weighted_delivery"],
+        ["delivery_rate", "mean_latency_ms", "mean_aoi_ms", "priority_weighted_delivery", "cnoma_sic_success_rate"],
     )
     _write_csv(output_dir / "ris_priority_summary.csv", priority_summary)
 
@@ -188,6 +197,7 @@ def train_and_evaluate(train_seeds, eval_seeds, episodes, eval_episodes_per_seed
         "steps_per_episode": steps,
         "learned_value_weight": learned_weight,
         "observation_scenarios": SCENARIOS,
+        "cnoma": {"users": 2, "sic": True, "power_profiles": 3},
         "policies": list(POLICIES),
         "priorities": list(PRIORITY_WEIGHT),
         "outputs": [

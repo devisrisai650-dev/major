@@ -1,4 +1,4 @@
-# FloodAI — Software-Only Flood Monitoring and Semantic Communication Simulation
+# FloodAI — RIS-CNOMA Flood Communication and Conservative Flood Monitoring Simulation
 
 FloodAI is a reproducible research prototype that combines regional environmental inputs, conservative flood-assessment gating, semantic message selection, a virtual channel/RIS simulator, and multi-seed evaluation.
 
@@ -13,7 +13,7 @@ FloodAI is a reproducible research prototype that combines regional environmenta
 
 ## Architecture
 
-`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> virtual channel/RIS -> evaluation -> API/dashboard -> Docker/Kubernetes -> Prometheus/Grafana`
+`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> XGBoost K prediction -> physics-informed channel -> RIS + CNOMA + SIC -> Q-learning controller -> delivery/AoI -> API/dashboard -> Docker/Kubernetes -> Prometheus/Grafana`
 
 ## Reproducible run order
 
@@ -36,16 +36,18 @@ The default RIS inference path does not update the Q-table. Learning is opt-in t
 
 The simulator compares:
 
-- agent
-- random
-- fixed
-- best-fixed
-- myopic under noisy/delayed observations
-- perfect-CSI oracle
+- RIS-CNOMA Q-learning agent under partial/noisy/delayed observations
+- random policy
+- fixed policy
+- best-fixed policy
+- myopic policy under noisy/delayed observations
+- perfect-CSI oracle reference
+
+The oracle is **not** the proposed system. It is an ideal reference that has perfect current channel information, so it helps quantify the performance gap caused by partial observability.
 
 The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`. Priority-wise latency/AoI results are written to `outputs/ris_priority_summary.csv`, the learned-value 0.0 versus default-weight ablation is written to `outputs/ris_weight_ablation.csv`, and run metadata is written to `outputs/experiment_metadata.json`.
 
-Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, RIS reconfigurations and reward.
+Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, SINR, CNOMA SIC success, node availability, RIS reconfigurations and reward.
 
 Results must be interpreted as simulated results. Whether the learned policy beats a baseline is determined from the generated CSVs, not from manually entered values.
 
@@ -54,6 +56,25 @@ Results must be interpreted as simulated results. Whether the learned policy bea
 `train_channel_model.py` generates a synthetic dataset and trains `models/xgboost_rician_model_v2.json`. The target is Rician K-factor in dB without a target floor. The script records the clipped-target fraction and documents the synthetic condition bands. Named generation scenarios are `baseline`, `urban_flood`, and `coastal_flood`; select one with `--scenario`.
 
 If the required measured channel features are unavailable to the live pipeline, the predictor returns an explicit unavailable result instead of inventing inputs. The model path can be overridden with the `FLOODAI_CHANNEL_MODEL_PATH` environment variable.
+
+## RIS-CNOMA communication model
+
+The communication subsystem now includes a two-user software CNOMA model. A selected RIS configuration is combined with one of three power-allocation profiles, followed by superposition, SINR calculation and simplified SIC decoding. The critical semantic stream determines the priority-sensitive delivery objective. This is a software abstraction for reproducible research, not a modem implementation.
+
+The channel simulator includes correlated fading, Rician components, rain attenuation, a Doppler term driven by simulated flow velocity, dynamic node loss, and a virtual RIS phase codebook. Environmental values perturb the simulation; they are not measurements of the radio channel.
+
+The API/dashboard exposes a separate **communication alert** with NORMAL, DEGRADED, CRITICAL or OUTAGE states. This must never be interpreted as a flood warning. Flood status remains conservatively gated by the existing official-threshold and QC rules.
+
+### New research scenarios
+
+- light, moderate and severe environmental/channel conditions
+- dynamic node outage
+- rain attenuation
+- Doppler variation
+- CNOMA SIC success/failure
+- partial observation versus perfect-CSI oracle
+
+The node_loss_probability API parameter is a simulation control. It does not represent a measured probability of physical node failure.
 
 ## Cloud-native deployment
 

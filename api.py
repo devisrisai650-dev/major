@@ -15,6 +15,7 @@ from semantic_transmission import transmit_semantic_message
 from services.flood_api import get_discharge_analysis
 from services.flood_state import analyze_flood_state
 from services.gauge_provider import CsvReplayProvider
+from services.channel_predictor import predict_channel
 from services.region_manager import get_region, load_regions
 from services.semantic_priority import (
     build_semantic_priorities,
@@ -23,6 +24,42 @@ from services.semantic_priority import (
     select_transmission_parameters,
 )
 from services.weather_service import get_weather_data
+
+def _communication_alert(transmission):
+    attempts = transmission.get("attempts", [])
+    successful = [item for item in attempts if item.get("delivered")]
+    last = attempts[-1] if attempts else {}
+    if not attempts:
+        return {"status": "OUTAGE", "reason": "No communication attempt was completed."}
+    if successful:
+        sinrs = [
+            value for item in successful
+            for value in (item.get("user1_sinr_db"), item.get("user2_sinr_db"))
+            if value is not None
+        ]
+        min_sinr = min(sinrs) if sinrs else None
+        status = "NORMAL" if min_sinr is None or min_sinr >= 10 else "DEGRADED"
+        return {
+            "status": status,
+            "reason": "Critical semantic packet delivered by the simulated RIS-CNOMA link.",
+            "min_sinr_db": min_sinr,
+            "sic_success": all(bool(item.get("sic_success")) for item in successful),
+        }
+    reason = "Packet delivery failed after retry limit."
+    if last.get("node_available") is False:
+        reason = "Selected simulated communication node became unavailable."
+    elif last.get("sic_success") is False:
+        reason = "CNOMA SIC/decoding failed under the simulated channel."
+    return {
+        "status": "CRITICAL",
+        "reason": reason,
+        "min_sinr_db": min(
+            [v for v in (last.get("user1_sinr_db"), last.get("user2_sinr_db")) if v is not None],
+            default=None,
+        ),
+        "sic_success": bool(last.get("sic_success")),
+    }
+
 
 app = FastAPI(
     title="FloodAI Local API",
@@ -81,6 +118,7 @@ class RunRequest(BaseModel):
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
     learn: bool = False
+    node_loss_probability: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 @app.get("/api/health")
@@ -133,6 +171,33 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     selected = select_transmission_parameters(priorities)
     message = generate_semantic_message(region["name"], analysis, selected)
     compression = calculate_semantic_compression(len(priorities), len(selected))
+    water_depth = water.get("current_level_m") if water.get("available") else None
+    rain_mm = weather.get("current", {}).get("rain_mm")
+    discharge_value = discharge.get("discharge_m3s") if discharge.get("available") else None
+    channel_features = {
+        "water_depth": water_depth,
+        "los_obstruction": (
+            min(1.0, max(0.0, float(rain_mm or 0.0) / 100.0 + float(water_depth or 0.0) / 5.0))
+            if water_depth is not None else None
+        ),
+        "debris_density": (
+            min(1.0, 0.05 + float(water_depth or 0.0) / 4.0)
+            if water_depth is not None else None
+        ),
+        "flow_velocity": (
+            min(2.0, max(0.0, float(discharge_value) / 50.0))
+            if discharge_value is not None else None
+        ),
+        "reflection_dominance": 1.0,
+    }
+    channel_prediction = predict_channel(**channel_features, scenario="regional_proxy_simulation")
+    simulation_context = {
+        "rain_mm": rain_mm,
+        "flow_velocity_mps": channel_features["flow_velocity"],
+        "water_depth_m": water_depth,
+        "debris_density": channel_features["debris_density"],
+        "los_obstruction": channel_features["los_obstruction"],
+    }
 
     try:
         transmission = transmit_semantic_message(
@@ -142,6 +207,8 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             max_attempts=request.communication_attempts,
             seed=request.seed,
             learn=request.learn,
+            channel_context=simulation_context,
+            node_loss_probability=request.node_loss_probability,
         )
     except FileNotFoundError as exc:
         PIPELINE_ERRORS.labels("model").inc()
@@ -165,6 +232,8 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
         "selected_parameters": selected,
         "semantic_message": message,
         "semantic_compression_percent": compression,
+        "channel_prediction": channel_prediction,
+        "communication_alert": _communication_alert(transmission),
         "communication": transmission,
         "provenance": {
             "communication_mode": "software_simulation",
@@ -173,6 +242,8 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             "weather_source": weather.get("source"),
             "gauge_mode": water.get("mode", "historical_replay"),
             "flood_assessment_status": "NOT_ASSESSED",
+            "channel_scenario": "regional_proxy_simulation",
+            "cnoma_enabled": True,
         },
         "disclaimer": {
             "flood_assessment": "NOT_ASSESSED is neither a flood warning nor an all-clear.",
