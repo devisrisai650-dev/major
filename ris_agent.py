@@ -41,7 +41,7 @@ def _file_lock(lock_path: Path):
 
 
 class QLearningRISAgent:
-    def __init__(self, n_channels=3, n_ris_configs=8, learning_rate=0.12,
+    def __init__(self, n_channels=3, n_ris_configs=8, n_power_profiles=3, learning_rate=0.12,
                  discount=0.92, epsilon=1.0, epsilon_min=0.04,
                  epsilon_decay=0.996, learned_value_weight=0.05, seed=None):
         if learned_value_weight < 0:
