@@ -1,0 +1,24 @@
+{
+  "dataset": "synthetic",
+  "target": "Rician K-factor (dB)",
+  "samples": 10000,
+  "mae_db": 0.2570825545948978,
+  "rmse_db": 0.32269734571888364,
+  "r2": 0.9942216707500275,
+  "clipped_target_fraction": 0.0,
+  "field_calibrated": false,
+  "features": [
+    "water_depth",
+    "los_obstruction",
+    "debris_density",
+    "flow_velocity",
+    "reflection_dominance"
+  ],
+  "seed": 42,
+  "documented_bands_db": {
+    "GOOD": "K >= 10 dB",
+    "MODERATE": "5 <= K < 10 dB",
+    "POOR": "2 <= K < 5 dB",
+    "SEVERE": "K < 2 dB"
+  }
+}
