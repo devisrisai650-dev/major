@@ -1,9 +1,14 @@
 """Reproducible multi-seed evaluation for the software-only virtual RIS backend."""
 from __future__ import annotations
+
 import argparse
 import csv
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+
 import numpy as np
+
 from ris_agent import QLearningRISAgent, train_agent
 from ris_environment import PRIORITY_WEIGHT, RISEnvironment
 
@@ -14,16 +19,18 @@ SCENARIOS = {
 }
 POLICIES = ("agent", "random", "fixed", "best_fixed", "myopic_noisy", "oracle")
 
+
 def bootstrap_ci(values, seed=2026, samples=2000):
-    values = np.asarray([v for v in values if v is not None], dtype=float)
+    values = np.asarray([v for v in values if v is not None and np.isfinite(v)], dtype=float)
     if values.size == 0:
         return (None, None)
     rng = np.random.default_rng(seed)
     means = np.mean(rng.choice(values, (samples, values.size), replace=True), axis=1)
     return tuple(np.percentile(means, [2.5, 97.5]))
 
+
 def choose_action(env, observation, policy, rng, fixed_action=None):
-    mask = env.action_mask()
+    mask = env.action_mask(observation)
     valid = np.flatnonzero(mask)
     if policy == "agent":
         return env.agent.choose_action(observation, mask, explore=False)
@@ -39,17 +46,19 @@ def choose_action(env, observation, policy, rng, fixed_action=None):
         return int(valid[0])
     raise ValueError(f"Unknown policy {policy}")
 
+
 def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
     env.reseed(episode_seed)
     env.observation_mode = "oracle" if policy == "oracle" else "partial"
     env.snr_noise_std_db = SCENARIOS[scenario]["noise"]
     env.observation_delay = SCENARIOS[scenario]["delay"]
+    env._history = __import__("collections").deque(
+        maxlen=max(2, env.observation_delay + 1)
+    )
     observation = env.reset(priority=priority)
+    env.agent = agent
     rng = np.random.default_rng(episode_seed + 991)
-    fixed_action = None
-    if policy == "best_fixed":
-        candidate = env.greedy_baseline_action(observation)
-        fixed_action = candidate
+    fixed_action = env.greedy_baseline_action(observation) if policy == "best_fixed" else None
     delivered = critical_delivered = 0
     weighted_delivered = 0.0
     latency = []
@@ -77,8 +86,11 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
         if done:
             break
     return {
-        "seed": episode_seed, "policy": policy, "scenario": scenario,
-        "priority": priority, "steps": env.max_steps,
+        "seed": episode_seed,
+        "policy": policy,
+        "scenario": scenario,
+        "priority": priority,
+        "steps": env.max_steps,
         "delivery_rate": delivered / env.max_steps,
         "critical_delivery_rate": critical_delivered / env.max_steps if priority == "CRITICAL" else np.nan,
         "priority_weighted_delivery": weighted_delivered / (env.max_steps * PRIORITY_WEIGHT[priority]),
@@ -93,7 +105,39 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
         "simulation_only": True,
     }
 
-def train_and_evaluate(train_seeds, eval_seeds, episodes, steps, output_dir, learned_weight):
+
+def _write_csv(path, rows):
+    if not rows:
+        return
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _aggregate(rows, keys, metrics):
+    grouped = {}
+    for row in rows:
+        key = tuple(row[k] for k in keys)
+        grouped.setdefault(key, []).append(row)
+    output = []
+    for key, subset in grouped.items():
+        result = dict(zip(keys, key))
+        for metric in metrics:
+            values = np.asarray(
+                [r[metric] for r in subset if np.isfinite(r[metric])],
+                dtype=float,
+            )
+            result[f"{metric}_mean"] = float(np.mean(values)) if values.size else np.nan
+            low, high = bootstrap_ci(values)
+            result[f"{metric}_ci95_low"] = low
+            result[f"{metric}_ci95_high"] = high
+        output.append(result)
+    return output
+
+
+def train_and_evaluate(train_seeds, eval_seeds, episodes, eval_episodes_per_seed,
+                        steps, output_dir, learned_weight):
     output_dir.mkdir(parents=True, exist_ok=True)
     episode_rows = []
     for train_seed in train_seeds:
@@ -103,80 +147,146 @@ def train_and_evaluate(train_seeds, eval_seeds, episodes, steps, output_dir, lea
         if train_seed == train_seeds[0]:
             agent.save(output_dir.parent / "models" / "ris_q_table.npz")
         for eval_seed in eval_seeds:
-            for scenario in SCENARIOS:
-                for priority in PRIORITY_WEIGHT:
-                    for policy in POLICIES:
-                        eval_env = RISEnvironment(
-                            seed=eval_seed, max_steps=steps, observation_mode="partial"
-                        )
-                        eval_env.agent = agent
-                        row = run_episode(
-                            eval_env, policy, eval_seed, priority, scenario, agent
-                        )
-                        row["train_seed"] = train_seed
-                        row["learned_value_weight"] = learned_weight
-                        episode_rows.append(row)
-    fields = list(episode_rows[0])
-    with (output_dir / "ris_episode_results.csv").open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(episode_rows)
+            for repeat in range(eval_episodes_per_seed):
+                episode_seed = eval_seed + repeat * 100000
+                for scenario in SCENARIOS:
+                    for priority in PRIORITY_WEIGHT:
+                        for policy in POLICIES:
+                            eval_env = RISEnvironment(
+                                seed=episode_seed, max_steps=steps, observation_mode="partial"
+                            )
+                            row = run_episode(
+                                eval_env, policy, episode_seed, priority, scenario, agent
+                            )
+                            row["train_seed"] = train_seed
+                            row["learned_value_weight"] = learned_weight
+                            episode_rows.append(row)
 
-    summary = []
-    metric_names = [
+    _write_csv(output_dir / "ris_episode_results.csv", episode_rows)
+    metrics = [
         "delivery_rate", "critical_delivery_rate", "priority_weighted_delivery",
-        "mean_latency_ms", "mean_aoi_ms", "mean_snr_db", "ris_reconfigurations", "mean_reward"
+        "mean_latency_ms", "mean_aoi_ms", "mean_snr_db",
+        "ris_reconfigurations", "mean_reward",
     ]
-    for policy in POLICIES:
-        for scenario in SCENARIOS:
-            subset = [r for r in episode_rows if r["policy"] == policy and r["scenario"] == scenario]
-            row = {"policy": policy, "scenario": scenario}
-            for metric in metric_names:
-                vals = [r[metric] for r in subset if np.isfinite(r[metric])]
-                row[f"{metric}_mean"] = float(np.mean(vals)) if vals else np.nan
-                low, high = bootstrap_ci(vals)
-                row[f"{metric}_ci95_low"] = low
-                row[f"{metric}_ci95_high"] = high
-            summary.append(row)
-    fields = list(summary[0])
-    with (output_dir / "ris_summary.csv").open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(summary)
+    summary = _aggregate(episode_rows, ["policy", "scenario"], metrics)
+    _write_csv(output_dir / "ris_summary.csv", summary)
+
+    priority_summary = _aggregate(
+        episode_rows,
+        ["policy", "scenario", "priority"],
+        ["delivery_rate", "mean_latency_ms", "mean_aoi_ms", "priority_weighted_delivery"],
+    )
+    _write_csv(output_dir / "ris_priority_summary.csv", priority_summary)
+
+    metadata = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "simulation_only": True,
+        "training_seeds": list(train_seeds),
+        "evaluation_seeds": list(eval_seeds),
+        "evaluation_repeats_per_seed": eval_episodes_per_seed,
+        "training_episodes_per_seed": episodes,
+        "steps_per_episode": steps,
+        "learned_value_weight": learned_weight,
+        "observation_scenarios": SCENARIOS,
+        "policies": list(POLICIES),
+        "priorities": list(PRIORITY_WEIGHT),
+        "outputs": [
+            "ris_episode_results.csv",
+            "ris_summary.csv",
+            "ris_priority_summary.csv",
+            "ris_weight_ablation.csv",
+        ],
+        "notes": [
+            "All channel, RIS, SNR, latency, delivery and AoI values are software simulations.",
+            "Evaluation seeds are disjoint from training seeds.",
+            "The oracle policy uses perfect current information and is a reference upper case.",
+        ],
+    }
+    (output_dir / "experiment_metadata.json").write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8"
+    )
     return episode_rows, summary
+
+
+def run_weight_ablation(train_seeds, eval_seeds, episodes, steps, output_dir, default_weight):
+    weights = [0.0, default_weight]
+    rows = []
+    for weight in weights:
+        for train_seed in train_seeds:
+            env = RISEnvironment(seed=train_seed, max_steps=steps, observation_mode="partial")
+            agent = QLearningRISAgent(seed=train_seed, learned_value_weight=weight)
+            train_agent(agent, env, episodes=episodes, max_steps=steps)
+            for eval_seed in eval_seeds:
+                for priority in PRIORITY_WEIGHT:
+                    eval_env = RISEnvironment(seed=eval_seed, max_steps=steps)
+                    row = run_episode(
+                        eval_env, "agent", eval_seed, priority, "moderate", agent
+                    )
+                    rows.append({
+                        "learned_value_weight": weight,
+                        "train_seed": train_seed,
+                        "eval_seed": eval_seed,
+                        "priority": priority,
+                        "delivery_rate": row["delivery_rate"],
+                        "mean_latency_ms": row["mean_latency_ms"],
+                        "mean_aoi_ms": row["mean_aoi_ms"],
+                    })
+    summary = _aggregate(
+        rows, ["learned_value_weight", "priority"],
+        ["delivery_rate", "mean_latency_ms", "mean_aoi_ms"],
+    )
+    _write_csv(output_dir / "ris_weight_ablation.csv", summary)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-seed software-only RIS evaluation")
     parser.add_argument("--train-seeds", type=int, default=10)
     parser.add_argument("--train-episodes", type=int, default=250)
     parser.add_argument("--eval-seeds", type=int, default=5)
-    parser.add_argument("--eval-episodes-per-seed", type=int, default=5)
+    parser.add_argument("--eval-episodes-per-seed", type=int, default=1)
     parser.add_argument("--steps", type=int, default=40)
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--learned-weight", type=float, default=0.05)
     parser.add_argument("--output-dir", default="outputs")
     args = parser.parse_args()
-    if min(args.train_seeds, args.train_episodes, args.eval_seeds, args.eval_episodes_per_seed, args.steps) < 1:
+    if min(
+        args.train_seeds, args.train_episodes, args.eval_seeds,
+        args.eval_episodes_per_seed, args.steps
+    ) < 1:
         parser.error("all counts must be positive")
+    if args.learned_weight < 0:
+        parser.error("learned weight must be non-negative")
+
     train_seeds = [args.seed + i for i in range(args.train_seeds)]
     eval_start = args.seed + 10000
     eval_seeds = [eval_start + i for i in range(args.eval_seeds)]
+    output_dir = Path(args.output_dir)
+
     rows, summary = train_and_evaluate(
         train_seeds, eval_seeds, args.train_episodes,
-        args.steps, Path(args.output_dir), args.learned_weight
+        args.eval_episodes_per_seed, args.steps, output_dir, args.learned_weight
     )
+    run_weight_ablation(
+        train_seeds, eval_seeds, args.train_episodes, args.steps,
+        output_dir, args.learned_weight
+    )
+
     print("SOFTWARE-ONLY MULTI-SEED RIS EVALUATION")
-    print("All channel, RIS, delivery, latency and SNR values are simulated.")
+    print("All channel, RIS, delivery, latency, SNR and AoI values are simulated.")
     print(f"Independent training seeds: {len(train_seeds)}")
     print(f"Disjoint evaluation seeds: {len(eval_seeds)}")
     print(f"Episode rows: {len(rows)}")
-    print("Results written to outputs/ris_episode_results.csv and outputs/ris_summary.csv")
+    print("Results written to outputs/ris_episode_results.csv")
+    print("Summary: outputs/ris_summary.csv")
+    print("Priority summary: outputs/ris_priority_summary.csv")
+    print("Weight ablation: outputs/ris_weight_ablation.csv")
     for row in summary:
         if row["scenario"] == "moderate":
             print(
                 f"{row['policy']:>14} | delivery={row['delivery_rate_mean']:.3f} "
                 f"[{row['delivery_rate_ci95_low']:.3f}, {row['delivery_rate_ci95_high']:.3f}]"
             )
+
 
 if __name__ == "__main__":
     main()
