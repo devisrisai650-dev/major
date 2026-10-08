@@ -1,11 +1,15 @@
-"""Software-only partially observable channel/RIS simulation environment."""
+"""Software-only partially observable channel/RIS simulation."""
 from __future__ import annotations
+
 from collections import deque
+
 import numpy as np
+
 from channel_simulator import ChannelSimulator
 
 PRIORITY_WEIGHT = {"LOW": 1.0, "MEDIUM": 1.5, "HIGH": 2.5, "CRITICAL": 4.0}
 RIS_SWITCH_PENALTY = 0.20
+
 
 class RISEnvironment:
     """Virtual channel/RIS environment; every radio value is simulated."""
@@ -42,6 +46,7 @@ class RISEnvironment:
             self.n_channels, self.n_ris_configs, self.simulator.n_ris_elements, seed
         )
         self._history.clear()
+        self._last_observation = None
 
     def reset(self, priority=None):
         if priority is None:
@@ -63,20 +68,25 @@ class RISEnvironment:
             source = self._history[0]
         else:
             source = list(self._history)[-(self.observation_delay + 1)]
-        result = {key: value.copy() if hasattr(value, "copy") else value for key, value in source.items()}
+        result = {
+            key: value.copy() if hasattr(value, "copy") else value
+            for key, value in source.items()
+        }
         if self.observation_mode == "partial":
             result["snr_db"] += self.rng.normal(
                 0.0, self.snr_noise_std_db, result["snr_db"].shape
             )
             result["success_probability"] = np.clip(
-                1.0 / (1.0 + np.exp(-((result["snr_db"] - 2.0) / 2.5))), 0.0, 1.0
+                1.0 / (1.0 + np.exp(-((result["snr_db"] - 2.0) / 2.5))),
+                0.0,
+                1.0,
             )
             result["available"] = result["snr_db"] >= -3.0
         return result
 
     def observe(self):
         observed = self._observed_measurements()
-        return {
+        self._last_observation = {
             "snr_db": observed["snr_db"].copy(),
             "success_probability": observed["success_probability"].copy(),
             "latency_ms": observed["latency_ms"].copy(),
@@ -90,10 +100,14 @@ class RISEnvironment:
             "observation_delay_steps": self.observation_delay,
             "simulation_only": True,
         }
+        return {
+            key: value.copy() if hasattr(value, "copy") else value
+            for key, value in self._last_observation.items()
+        }
 
-    def action_mask(self):
+    def action_mask(self, observation=None):
+        observation = observation or self._last_observation or self.observe()
         mask = np.zeros(self.n_actions, dtype=bool)
-        observation = self._last_observation if self._last_observation is not None else self.observe()
         mask[:self.wait_action] = observation["available"].reshape(-1)
         if not mask.any():
             mask[self.wait_action] = True
@@ -118,13 +132,9 @@ class RISEnvironment:
         else:
             selected_channel, selected_ris = divmod(action, self.n_ris_configs)
             snr_db = float(self.measurements["snr_db"][selected_channel, selected_ris])
-            p_success = float(
-                self.measurements["success_probability"][selected_channel, selected_ris]
-            )
+            p_success = float(self.measurements["success_probability"][selected_channel, selected_ris])
             latency_ms = float(self.measurements["latency_ms"][selected_channel, selected_ris])
-            throughput_mbps = float(
-                self.measurements["throughput_mbps"][selected_channel, selected_ris]
-            )
+            throughput_mbps = float(self.measurements["throughput_mbps"][selected_channel, selected_ris])
             delivered = bool(self.rng.random() < p_success)
             channel_condition = (
                 "GOOD" if snr_db >= 10 else
@@ -150,7 +160,8 @@ class RISEnvironment:
             "delivered": delivered,
             "selected_channel": selected_channel,
             "channel_candidate": (
-                f"sim_candidate_{selected_channel + 1}" if selected_channel is not None else None
+                f"sim_candidate_{selected_channel + 1}"
+                if selected_channel is not None else None
             ),
             "selected_ris_config": selected_ris,
             "channel_condition": channel_condition,
@@ -168,7 +179,7 @@ class RISEnvironment:
         return self.observe(), float(reward), done, info
 
     def greedy_baseline_action(self, observation=None):
-        observation = observation or self.observe()
+        observation = observation or self._last_observation or self.observe()
         available = observation["available"].reshape(-1)
         p = observation["success_probability"].reshape(-1)
         latency = observation["latency_ms"].reshape(-1)

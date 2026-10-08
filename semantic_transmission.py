@@ -1,12 +1,10 @@
 """Connect selected flood semantics to the simulated RIS communication loop."""
-
 from __future__ import annotations
 
 from pathlib import Path
 
 from ris_agent import QLearningRISAgent
 from ris_environment import RISEnvironment
-
 
 PRIORITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
@@ -53,18 +51,21 @@ def transmit_semantic_message(
     for attempt_number in range(1, max_attempts + 1):
         state = agent.encode_state(observation)
         action = agent.choose_action(
-            observation, env.action_mask(), explore=False
+            observation, env.action_mask(observation), explore=False
         )
-        next_observation, reward, env_done, info = env.step(
-            action, packet=packet
-        )
+        next_observation, reward, env_done, info = env.step(action, packet=packet)
         terminal = bool(
             info["delivered"] or env_done or attempt_number == max_attempts
         )
         next_state = agent.encode_state(next_observation)
         if learn:
             agent.learn(
-                state, action, reward, next_state, env.action_mask(), terminal
+                state,
+                action,
+                reward,
+                next_state,
+                env.action_mask(next_observation),
+                terminal,
             )
         attempts.append({
             "attempt": attempt_number,
