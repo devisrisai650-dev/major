@@ -60,6 +60,21 @@ def plot_priority_latency(priority_summary):
     plt.close(fig)
 
 
+
+def plot_cnoma_sic(summary):
+    data = summary[summary["scenario"] == "moderate"]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for policy in data["policy"].unique():
+        subset = data[data["policy"] == policy]
+        ax.scatter(subset["policy"], subset["cnoma_sic_success_rate_mean"], label=policy)
+    ax.set_ylabel("CNOMA SIC success rate")
+    ax.set_title("FloodAI simulated CNOMA SIC success")
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(OUT / "RIS_RESULTS_CNOMA_SIC.png", dpi=180)
+    plt.close(fig)
+
 def main():
     summary = pd.read_csv(OUT / "ris_summary.csv")
     plot_metric(summary, "delivery_rate", "Delivery ratio", "RIS_RESULTS.png")
@@ -69,6 +84,7 @@ def main():
         summary, "priority_weighted_delivery",
         "Priority-weighted delivery", "RIS_RESULTS_PRIORITY.png"
     )
+    plot_cnoma_sic(summary)
     priority_path = OUT / "ris_priority_summary.csv"
     if priority_path.exists():
         plot_priority_latency(pd.read_csv(priority_path))
