@@ -42,7 +42,7 @@ def transmit_semantic_message(
     agent.load(policy_path)
     agent.epsilon = 0.0
 
-    env = RISEnvironment(seed=seed, max_steps=max_attempts)
+    env = RISEnvironment(\n        seed=seed, max_steps=max_attempts,\n        channel_context=channel_context,\n        node_loss_probability=node_loss_probability,\n    )
     priority = priority_for_message(priorities)
     observation = env.reset(priority=priority)
     attempts = []
