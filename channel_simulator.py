@@ -46,7 +46,6 @@ class ChannelSimulator:
         water_depth_m: float | None = None,
         debris_density: float | None = None,
         los_obstruction: float | None = None,
-        node_loss_probability: float = 0.0,
     ):
         self.environment = {
             "rain_mm": max(0.0, float(rain_mm or 0.0)),
