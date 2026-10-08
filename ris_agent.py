@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ris_environment import PRIORITY_WEIGHT, RIS_SWITCH_PENALTY
+from ris_environment import PRIORITY_WEIGHT, POWER_SWITCH_PENALTY, RIS_SWITCH_PENALTY
 
 
 @contextmanager
@@ -48,7 +48,8 @@ class QLearningRISAgent:
             raise ValueError("learned_value_weight must be non-negative")
         self.n_channels = n_channels
         self.n_ris_configs = n_ris_configs
-        self.wait_action = n_channels * n_ris_configs
+        self.n_power_profiles = n_power_profiles
+        self.wait_action = n_channels * n_ris_configs * n_power_profiles
         self.n_actions = self.wait_action + 1
         self.learning_rate = learning_rate
         self.discount = discount
@@ -58,11 +59,12 @@ class QLearningRISAgent:
         self.learned_value_weight = learned_value_weight
         self.rng = np.random.default_rng(seed)
         self.priority_index = {name: i for i, name in enumerate(PRIORITY_WEIGHT)}
-        self.n_states = (4 ** n_channels) * n_ris_configs * len(PRIORITY_WEIGHT)
+        self.n_states = (4 ** n_channels) * n_ris_configs * n_power_profiles * len(PRIORITY_WEIGHT)
         self.q = np.zeros((self.n_states, self.n_actions), dtype=np.float32)
 
     def encode_state(self, observation):
         current_ris = int(observation["current_ris_config"])
+        current_power = int(observation["current_power_profile"])
         priority = self.priority_index[observation["priority"]]
         snr = observation["snr_db"][:, current_ris]
         bins = np.digitize(snr, [-1.0, 5.0, 10.0]).astype(int)
@@ -71,8 +73,8 @@ class QLearningRISAgent:
         for bucket in bins:
             channel_code += int(bucket) * multiplier
             multiplier *= 4
-        return ((priority * self.n_ris_configs + current_ris) * (4 ** self.n_channels)
-                + channel_code)
+        return (((priority * self.n_ris_configs + current_ris) * self.n_power_profiles
+                 + current_power) * (4 ** self.n_channels) + channel_code)
 
     def choose_action(self, observation, action_mask, explore=False):
         valid = np.flatnonzero(action_mask)
@@ -86,13 +88,17 @@ class QLearningRISAgent:
         for i, action in enumerate(valid):
             if action == self.wait_action:
                 continue
-            channel, ris_config = divmod(int(action), self.n_ris_configs)
-            probability = float(observation["success_probability"][channel, ris_config])
+            block, power = divmod(int(action), self.n_power_profiles)
+            channel, ris_config = divmod(block, self.n_ris_configs)
+            probability = float(observation["cnoma_success_probability"][channel, ris_config, power])
             latency = float(observation["latency_ms"][channel, ris_config])
             throughput = float(observation["throughput_mbps"][channel, ris_config])
-            switch_cost = RIS_SWITCH_PENALTY if ris_config != int(
-                observation["current_ris_config"]
-            ) else 0.0
+            switch_cost = (
+                RIS_SWITCH_PENALTY if ris_config != int(observation["current_ris_config"]) else 0.0
+            )
+            switch_cost += (
+                POWER_SWITCH_PENALTY if power != int(observation["current_power_profile"]) else 0.0
+            )
             expected_reward[i] = (
                 weight * (2.25 * probability - 1.25)
                 - weight * latency / 250.0
@@ -141,7 +147,9 @@ class QLearningRISAgent:
         lock_path = path.with_name(f".{path.name}.lock")
         with _file_lock(lock_path):
             with np.load(path) as saved:
-                if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
+                if (int(saved["n_channels"]) != self.n_channels
+                        or int(saved["n_ris_configs"]) != self.n_ris_configs
+                        or int(saved.get("n_power_profiles", np.array(self.n_power_profiles))) != self.n_power_profiles):
                     raise ValueError("Saved Q-table dimensions do not match this environment")
                 table = saved["q"]
                 if table.shape != self.q.shape:
