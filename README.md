@@ -23,8 +23,8 @@ Use the project virtual environment on Windows:
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe train_channel_model.py
-.\.venv\Scripts\python.exe runtime.py --train-seeds 10 --train-episodes 250 --eval-seeds 5 --steps 40
+.\.venv\Scripts\python.exe train_channel_model.py --scenario baseline
+.\.venv\Scripts\python.exe runtime.py --train-seeds 10 --train-episodes 250 --eval-seeds 5 --eval-episodes-per-seed 1 --steps 40
 .\.venv\Scripts\python.exe plot_results.py
 .\.venv\Scripts\python.exe main.py --region region_001 --seed 1234
 .\.venv\Scripts\python.exe -m uvicorn api:app --reload
@@ -55,7 +55,33 @@ Results must be interpreted as simulated results. Whether the learned policy bea
 
 If the required measured channel features are unavailable to the live pipeline, the predictor returns an explicit unavailable result instead of inventing inputs. The model path can be overridden with the `FLOODAI_CHANNEL_MODEL_PATH` environment variable.
 
-## Cloud-native deployment\n\nThe deployment layer packages the existing software-only pipeline with Docker and Kubernetes. FastAPI remains the application boundary; XGBoost and Q-learning remain the existing research components. Prometheus collects API/pipeline metrics and Grafana provides operational dashboards. Kubernetes provides health checks, replica management and CPU-based autoscaling. These technologies do not make the simulated wireless channel a physical radio system.\n\n### Docker Compose\n\n```powershell\ndocker compose up --build\n```\n\n- Dashboard/API: http://localhost:8000\n- Prometheus: http://localhost:9090\n- Grafana: http://localhost:3000\n\n### Kubernetes\n\nSee `k8s/README.md`. With Docker Desktop Kubernetes enabled:\n\n```powershell\ndocker build -t floodai-api:latest .\nkubectl apply -f k8s/\nkubectl -n floodai get pods\n```\n\nThe HPA requires a Kubernetes metrics server. Production deployment also needs registry-backed images, TLS, authentication, secrets and persistent monitoring storage.\n\n## API
+## Cloud-native deployment
+
+The deployment layer packages the existing software-only pipeline with Docker and Kubernetes. FastAPI remains the application boundary; XGBoost and Q-learning remain the existing research components. Prometheus collects API/pipeline metrics and Grafana provides operational dashboards. Kubernetes provides health checks, replica management and CPU-based autoscaling. These technologies do not make the simulated wireless channel a physical radio system.
+
+### Docker Compose
+
+```powershell
+docker compose up --build
+```
+
+- Dashboard/API: http://localhost:8000
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000
+
+### Kubernetes
+
+See `k8s/README.md`. With Docker Desktop Kubernetes enabled:
+
+```powershell
+docker build -t floodai-api:latest .
+kubectl apply -f k8s/
+kubectl -n floodai get pods
+```
+
+The HPA requires a Kubernetes metrics server. Production deployment also needs registry-backed images, TLS, authentication, secrets and persistent monitoring storage.
+
+## API
 
 Start:
 
@@ -68,3 +94,20 @@ Then open the local dashboard at the server root. `POST /api/run` accepts a regi
 ## Limitations and future real-world work
 
 A real deployment would require authoritative local warning thresholds, validated gauge ingestion, sensor QC and outage handling, field-calibrated channel data, measured radio hardware, regulatory/frequency planning, security, and operational validation with local disaster-management authorities. None of those are claimed by this software-only prototype.
+
+
+## Local launch
+
+On Windows with Docker Desktop running, use `run_floodai.ps1` to start the Compose services, wait for the API health check, and open the local dashboard at `http://localhost:8000/`. The launcher does not replace the scientific provenance boundaries: environmental assessment remains conservative and the communication/RIS layer remains software simulation.
+
+## Validation checklist
+
+Before treating a run as a reproducible project result:
+
+1. Run `pytest -q` and `ruff check .`.
+2. Train the synthetic channel model with an explicit named scenario.
+3. Run the multi-seed RIS evaluation with disjoint training and evaluation seeds.
+4. Inspect `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, and `outputs/experiment_metadata.json`.
+5. Generate plots only from the CSV outputs.
+6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
+7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.
