@@ -67,7 +67,7 @@
         <article class="card third"><h3>Configured station</h3><div class="rows"><span>Station</span><span id="station">—</span><span>Current reading</span><span id="water-level">—</span><span>Latest file value</span><span id="historical-level">—</span><span>Recorded at</span><span id="water-time">—</span><span>Age</span><span id="water-age">—</span></div></article>
         <article class="card third"><h3>Semantic priorities</h3><div id="priorities" class="empty">Run the pipeline to populate priorities.</div></article>
         <article class="card full"><h3>Selected semantic message</h3><div id="semantic-message" class="message">—</div><div><span id="delivery-status" class="pill">Waiting to run</span></div><p id="receiver-message" class="card-note" style="margin:10px 0 0"></p></article>
-        <article class="card full"><h3>Simulated channel and virtual RIS decisions</h3><p class="card-note">The agent receives feedback from each simulated attempt and updates its saved policy.</p><div id="attempt-list" class="empty">No attempts yet.</div></article>
+        <article class="card full"><h3>Simulated channel and virtual RIS decisions</h3><p class="card-note">Learning is opt-in. With the dashboard default, the agent only performs inference and the saved policy is not modified. Enable learning through the API when an experiment intentionally updates the policy.</p><div id="attempt-list" class="empty">No attempts yet.</div></article>
       </div>
       <p class="notice">Simulation only: candidate channels, channel conditions, RIS effects, and receiver outcomes are generated in software. “NOT ASSESSED” is neither a flood warning nor an all-clear. Follow official local guidance.</p>
     </section>
