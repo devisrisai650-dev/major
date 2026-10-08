@@ -102,9 +102,24 @@ def transmit_semantic_message(
     if learn:
         agent.save(policy_path)
 
+    delivered = received == packet
+    delivered_attempt = next((item for item in attempts if item["delivered"]), None)
+    critical_delivered = delivered and priority == "CRITICAL"
     return {
         "priority": priority,
-        "delivered": received == packet,
+        "delivered": delivered,
+        "critical_delivered": critical_delivered,
+        "delivery_attempt": delivered_attempt["attempt"] if delivered_attempt else None,
+        "delivery_latency_ms": delivered_attempt["latency_ms"] if delivered_attempt else None,
+        "delivery_aoi_ms": delivered_attempt["latency_ms"] if delivered_attempt else None,
+        "mean_latency_ms": (
+            sum(float(item["latency_ms"]) for item in attempts if item["latency_ms"] is not None)
+            / max(1, sum(item["latency_ms"] is not None for item in attempts))
+        ),
+        "mean_throughput_mbps": (
+            sum(float(item["throughput_mbps"]) for item in attempts if item["throughput_mbps"] is not None)
+            / max(1, sum(item["throughput_mbps"] is not None for item in attempts))
+        ),
         "packet_received": received,
         "attempts": attempts,
         "policy_path": str(policy_path),
