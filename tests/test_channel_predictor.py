@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 import services.channel_predictor as predictor
