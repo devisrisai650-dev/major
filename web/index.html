@@ -21,7 +21,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;p
 <section class="toolbar"><div><div class="eyebrow">Monitoring console</div><h2 id="region-heading">Choose a region</h2></div><div class="controls">
 <div><label for="region-select">Region</label><select id="region-select"><option>Loading…</option></select></div>
 <div><label for="attempts">Attempts</label><select id="attempts"><option>1</option><option>3</option><option selected>5</option><option>10</option></select></div>
-<div><label for="node-loss">Node outage probability</label><select id="node-loss"><option value="0">0%</option><option value=".03" selected>3%</option><option value=".08">8%</option><option value=".15">15%</option></select></div>
+<div><label for="node-loss">Node outage probability</label><select id="node-loss"><option value="0">0%</option><option value=".03">3%</option><option value=".08">8%</option><option value=".15" selected>15%</option></select></div>
 <button id="run-button" disabled>Run pipeline</button></div></section>
 <div class="quick-actions" id="scenario-presets" aria-label="Node outage presets">
   <button data-loss="0">0% baseline</button>
@@ -78,11 +78,9 @@ function render(data){
  const deliveredAttempts=attempts.filter(x=>x.delivered).length;
  const sicAttempts=attempts.filter(x=>x.sic_success).length;
  const nodeAttempts=attempts.filter(x=>x.node_available).length;
- const criticalPriority=Object.values(data.semantic_priorities||{}).find(x=>x.priority==="CRITICAL");
  history.push({
    label:Math.round(Number($("node-loss").value)*100)+"%",
    delivery:c.delivered?100:(attempts.length?deliveredAttempts/attempts.length*100:0),
-   critical:criticalPriority?.available?((c.delivered&&criticalPriority.priority==="CRITICAL")?100:0):(c.delivered?100:0),
    sic:attempts.length?sicAttempts/attempts.length*100:0,
    node:attempts.length?nodeAttempts/attempts.length*100:0,
    latency:Number(first.latency_ms)||0,
@@ -131,9 +129,9 @@ function renderHistory(){
    chart.appendChild(labels);host.appendChild(chart);
  }
  const summary=document.createElement("div");summary.className="chart";summary.style.gridColumn="1/-1";
- summary.innerHTML="<strong>Scenario results</strong><table><thead><tr><th>Scenario</th><th>Delivery</th><th>Critical delivery</th><th>SIC</th><th>Node availability</th><th>Latency</th><th>Alert</th></tr></thead><tbody></tbody></table>";
+ summary.innerHTML="<strong>Scenario results</strong><table><thead><tr><th>Scenario</th><th>Delivery</th><th>SIC</th><th>Node availability</th><th>Latency</th><th>Alert</th></tr></thead><tbody></tbody></table>";
  const body=summary.querySelector("tbody");
- for(const item of history){const r=document.createElement("tr");cell(r,item.label);cell(r,item.delivery.toFixed(1)+"%");cell(r,item.critical.toFixed(1)+"%");cell(r,item.sic.toFixed(1)+"%");cell(r,item.node.toFixed(1)+"%");cell(r,item.latency.toFixed(1)+" ms");cell(r,item.alert);body.appendChild(r)}
+ for(const item of history){const r=document.createElement("tr");cell(r,item.label);cell(r,item.delivery.toFixed(1)+"%");cell(r,item.sic.toFixed(1)+"%");cell(r,item.node.toFixed(1)+"%");cell(r,item.latency.toFixed(1)+" ms");cell(r,item.alert);body.appendChild(r)}
  host.appendChild(summary);
 }
 async function runPipeline(lossOverride=null){
