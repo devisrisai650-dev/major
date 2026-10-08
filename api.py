@@ -171,7 +171,6 @@ class RunRequest(BaseModel):
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
     learn: bool = False
-    node_loss_probability: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 @app.get("/api/health")
@@ -261,7 +260,6 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             seed=request.seed,
             learn=request.learn,
             channel_context=simulation_context,
-            node_loss_probability=request.node_loss_probability,
         )
     except FileNotFoundError as exc:
         PIPELINE_ERRORS.labels("model").inc()
