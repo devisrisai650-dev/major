@@ -13,7 +13,7 @@ main{max-width:1300px;margin:auto;padding:25px clamp(16px,4vw,48px) 50px}.toolba
 .message{padding:14px;border-radius:10px;background:#09171e;border:1px solid var(--line);font:13px/1.6 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}.pill{display:inline-block;font-size:11px;border-radius:99px;padding:3px 8px;border:1px solid var(--line);color:var(--muted)}.pill.ok{color:#a7eddc;border-color:#36776b}.pill.warn{color:var(--amber);border-color:#78653f}
 table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted)}td{overflow-wrap:anywhere}.empty,.error{color:var(--muted);font-size:13px}.error{color:var(--red);min-height:20px}.notice{margin-top:18px;color:var(--muted);font-size:11px}
 @media(max-width:800px){.card,.third{grid-column:1/-1}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{align-items:flex-start}}
-</style>
+.quick-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.quick-actions button{min-width:auto;padding:6px 10px;font-size:11px;background:transparent;color:var(--muted);border-color:var(--line)}.quick-actions button:hover,.quick-actions button.active{color:var(--teal);border-color:var(--teal);background:rgba(85,214,189,.08)}.toolbar-status{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:11px;margin-top:8px}.dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px var(--teal)}.action-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.secondary{background:transparent;color:var(--text);border-color:var(--line)}.secondary:hover{border-color:var(--teal);color:var(--teal)}.chart-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chart{min-height:180px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#09171e}.bars{display:flex;align-items:end;gap:10px;height:130px;padding:8px 4px 0}.bar-group{flex:1;display:flex;align-items:end;gap:4px;height:100%}.bar{flex:1;min-width:8px;border-radius:4px 4px 0 0;background:var(--teal);height:4%;transition:height .5s ease}.bar.alt{background:var(--blue)}.bar.warn{background:var(--amber)}.bar-label{text-align:center;color:var(--muted);font-size:10px;margin-top:5px}.legend{display:flex;gap:12px;color:var(--muted);font-size:10px;margin-top:8px}.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;background:var(--teal)}.legend i.alt{background:var(--blue)}.history-empty{padding:35px 10px;text-align:center;color:var(--muted)}.clickable{cursor:pointer}.clickable:hover{border-color:#4e7480;transform:translateY(-1px)}.card{transition:border-color .18s ease,transform .18s ease}.copy-ok{color:#a7eddc!important;border-color:#36776b!important}.running{opacity:.65;pointer-events:none}.attempt-row-delivered{background:rgba(85,214,189,.045)}.attempt-row-failed{background:rgba(255,141,132,.045)}@media(max-width:800px){.chart-wrap{grid-template-columns:1fr}}</style>
 </head>
 <body>
 <header><div class="brand"><div class="mark">≈</div><div><h1>FloodAI</h1><div class="subtitle">RIS-CNOMA disaster communication and conservative flood assessment</div></div></div><div id="service-badge" class="badge">Connecting…</div></header>
@@ -23,6 +23,13 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;p
 <div><label for="attempts">Attempts</label><select id="attempts"><option>1</option><option>3</option><option selected>5</option><option>10</option></select></div>
 <div><label for="node-loss">Node outage probability</label><select id="node-loss"><option value="0">0%</option><option value=".03" selected>3%</option><option value=".08">8%</option><option value=".15">15%</option></select></div>
 <button id="run-button" disabled>Run pipeline</button></div></section>
+<div class="quick-actions" id="scenario-presets" aria-label="Node outage presets">
+  <button data-loss="0">0% baseline</button>
+  <button data-loss=".05">5% outage</button>
+  <button data-loss=".15" class="active">15% outage</button>
+  <button data-loss=".30">30% stress</button>
+</div>
+<div class="toolbar-status"><span class="dot"></span><span id="last-run">Ready — choose a scenario and run the pipeline.</span></div>
 <div id="error" class="error"></div>
 <section id="results" hidden>
 <div id="flood-alert" class="alert warn"><h3>Flood / environmental status</h3><span class="state">NOT ASSESSED</span><p id="flood-reason"></p></div>
@@ -37,7 +44,19 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;p
 <article class="card third"><h3>Delivery</h3><div class="rows"><span>Packet</span><span id="delivery">—</span><span>Latency</span><span id="latency">—</span><span>AoI</span><span id="aoi">—</span></div></article>
 <article class="card third"><h3>Research provenance</h3><div class="rows"><span>Mode</span><span>Software simulation</span><span>CNOMA</span><span>Enabled</span><span>Seed</span><span id="seed">—</span></div></article>
 <article class="card full"><h3>Selected semantic message</h3><div id="message" class="message">—</div><p class="note" id="receiver"></p></article>
-<article class="card full"><h3>Transmission attempts</h3><div id="attempt-table" class="empty">No attempts yet.</div></article>
+<article class="card full"><h3>Transmission attempts</h3>
+  <div class="action-bar">
+    <button id="copy-message" class="secondary">Copy semantic message</button>
+    <button id="download-json" class="secondary">Download run JSON</button>
+    <button id="clear-history" class="secondary">Clear comparison</button>
+  </div>
+  <div id="attempt-table" class="empty">No attempts yet.</div>
+</article>
+<article class="card full">
+  <h3>Interactive outage comparison</h3>
+  <p class="note">Run multiple outage scenarios and compare delivery, CNOMA/SIC reliability and node availability. Values are software simulations.</p>
+  <div id="history" class="history-empty">No comparison runs yet. Use the outage presets above.</div>
+</article>
 </div>
 <p class="notice">Flood status is deliberately conservative: NOT ASSESSED is neither a flood warning nor an all-clear. Weather/discharge may be live or model-derived; CSV gauge data is historical replay. RIS, CNOMA, SNR, SINR, SIC, latency, AoI, outages and packet outcomes are software simulations.</p>
 </section>
@@ -45,13 +64,31 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;p
 <script>
 const $=id=>document.getElementById(id);
 const api=window.location.origin;
+let lastRunData=null;
+let history=[];
+let running=false;
 function set(id,v,f="UNAVAILABLE"){ $(id).textContent=v===null||v===undefined||v===""?f:String(v); }
 function fmt(v,u="",d=1){return v===null||v===undefined?"UNAVAILABLE":Number(v).toFixed(d)+u;}
 function cell(row,v){const td=document.createElement("td");td.textContent=v===null||v===undefined?"—":String(v);row.appendChild(td);}
 function renderPriorities(items){const t=document.createElement("table"),h=document.createElement("tr");["Item","Value","Priority"].forEach(x=>{const th=document.createElement("th");th.textContent=x;h.appendChild(th)});const thead=document.createElement("thead");thead.appendChild(h);t.appendChild(thead);const b=document.createElement("tbody");for(const [k,v] of Object.entries(items||{})){const r=document.createElement("tr");cell(r,k.replaceAll("_"," "));cell(r,v.available?v.value:"UNAVAILABLE");cell(r,v.priority);b.appendChild(r)}t.appendChild(b);$("priorities").replaceChildren(t)}
-function renderAttempts(items){const t=document.createElement("table"),h=document.createElement("tr");["Try","RIS","Power","SNR","U1 SINR","U2 SINR","SIC","Node","Result"].forEach(x=>{const th=document.createElement("th");th.textContent=x;h.appendChild(th)});const thead=document.createElement("thead");thead.appendChild(h);t.appendChild(thead);const b=document.createElement("tbody");for(const x of items||[]){const r=document.createElement("tr");cell(r,x.attempt);cell(r,x.ris_configuration);cell(r,x.power_user1+" / "+x.power_user2);cell(r,fmt(x.snr_db," dB",2));cell(r,fmt(x.user1_sinr_db," dB",2));cell(r,fmt(x.user2_sinr_db," dB",2));cell(r,x.sic_success?"SUCCESS":"FAIL");cell(r,x.node_available?"AVAILABLE":"UNAVAILABLE");cell(r,x.delivered?"DELIVERED":"RETRY");b.appendChild(r)}t.appendChild(b);$("attempt-table").replaceChildren(t)}
+function renderAttempts(items){const t=document.createElement("table"),h=document.createElement("tr");["Try","RIS","Power","SNR","U1 SINR","U2 SINR","SIC","Node","Result"].forEach(x=>{const th=document.createElement("th");th.textContent=x;h.appendChild(th)});const thead=document.createElement("thead");thead.appendChild(h);t.appendChild(thead);const b=document.createElement("tbody");for(const x of items||[]){const r=document.createElement("tr");r.className=x.delivered?"attempt-row-delivered":"attempt-row-failed";cell(r,x.attempt);cell(r,x.ris_configuration);cell(r,x.power_user1+" / "+x.power_user2);cell(r,fmt(x.snr_db," dB",2));cell(r,fmt(x.user1_sinr_db," dB",2));cell(r,fmt(x.user2_sinr_db," dB",2));cell(r,x.sic_success?"SUCCESS":"FAIL");cell(r,x.node_available?"AVAILABLE":"UNAVAILABLE");cell(r,x.delivered?"DELIVERED":"RETRY");b.appendChild(r)}t.appendChild(b);$("attempt-table").replaceChildren(t)}
 function render(data){
  const a=data.flood_assessment,c=data.communication,first=(c.attempts||[])[c.attempts.length-1]||{},cp=data.channel_prediction||{};
+ const attempts=c.attempts||[];
+ const deliveredAttempts=attempts.filter(x=>x.delivered).length;
+ const sicAttempts=attempts.filter(x=>x.sic_success).length;
+ const nodeAttempts=attempts.filter(x=>x.node_available).length;
+ const criticalPriority=Object.values(data.semantic_priorities||{}).find(x=>x.priority==="CRITICAL");
+ history.push({
+   label:Math.round(Number($("node-loss").value)*100)+"%",
+   delivery:c.delivered?100:(attempts.length?deliveredAttempts/attempts.length*100:0),
+   critical:criticalPriority?.available?((c.delivered&&criticalPriority.priority==="CRITICAL")?100:0):(c.delivered?100:0),
+   sic:attempts.length?sicAttempts/attempts.length*100:0,
+   node:attempts.length?nodeAttempts/attempts.length*100:0,
+   latency:Number(first.latency_ms)||0,
+   alert:(data.communication_alert||{}).status||"UNKNOWN"
+ });
+ if(history.length>8)history.shift();
  $("results").hidden=false;$("region-heading").textContent=data.region.name;
  $("flood-alert").className="alert warn";$("flood-reason").textContent=a.reason||"Assessment unavailable.";
  const ca=data.communication_alert||{};const cls=ca.status==="NORMAL"?"normal":ca.status==="DEGRADED"?"degraded":"critical";$("comm-alert").className="alert "+cls;$("comm-state").textContent=ca.status||"UNKNOWN";$("comm-reason").textContent=ca.reason||"";
@@ -63,9 +100,64 @@ function render(data){
  set("delivery",c.delivered?"DELIVERED":"FAILED");set("latency",fmt(first.latency_ms," ms",1));set("aoi",fmt(first.latency_ms," ms",1));set("seed",data.provenance.seed);
  set("message",data.semantic_message);$("receiver").textContent=c.delivered?"Receiver decoded the semantic packet in the software simulation.":"Receiver did not decode the packet within the retry limit.";
  renderPriorities(data.semantic_priorities);renderAttempts(c.attempts);
+ lastRunData=data;
+ $("last-run").textContent="Last run: "+new Date().toLocaleTimeString()+" · outage "+Math.round(Number($("node-loss").value)*100)+"% · seed "+data.provenance.seed;
+ renderHistory();
+}
+function renderHistory(){
+ const host=$("history");
+ if(!history.length){host.className="history-empty";host.textContent="No comparison runs yet. Use the outage presets above.";return}
+ host.className="chart-wrap";
+ const metrics=[
+   {title:"Delivery rate",key:"delivery",suffix:"%",field:"delivery"},
+   {title:"CNOMA / SIC success",key:"sic",suffix:"%",field:"sic"},
+   {title:"Node availability",key:"node",suffix:"%",field:"node"}
+ ];
+ host.replaceChildren();
+ const values=metrics.map(m=>history.map(x=>x[m.field]));
+ const max=100;
+ for(let mi=0;mi<2;mi++){
+   const m=metrics[mi], chart=document.createElement("div");chart.className="chart";
+   const title=document.createElement("strong");title.textContent=m.title;chart.appendChild(title);
+   const bars=document.createElement("div");bars.className="bars";
+   for(const item of history){
+     const group=document.createElement("div");group.className="bar-group";
+     const bar=document.createElement("div");bar.className="bar";bar.title=item.label+": "+item[m.field].toFixed(1)+m.suffix;bar.style.height=Math.max(4,Math.min(100,item[m.field]/max*100))+"%";
+     group.appendChild(bar);bars.appendChild(group);
+   }
+   chart.appendChild(bars);
+   const labels=document.createElement("div");labels.style.display="flex";labels.style.gap="10px";
+   for(const item of history){const l=document.createElement("div");l.className="bar-label";l.style.flex="1";l.textContent=item.label;labels.appendChild(l)}
+   chart.appendChild(labels);host.appendChild(chart);
+ }
+ const summary=document.createElement("div");summary.className="chart";summary.style.gridColumn="1/-1";
+ summary.innerHTML="<strong>Scenario results</strong><table><thead><tr><th>Scenario</th><th>Delivery</th><th>Critical delivery</th><th>SIC</th><th>Node availability</th><th>Latency</th><th>Alert</th></tr></thead><tbody></tbody></table>";
+ const body=summary.querySelector("tbody");
+ for(const item of history){const r=document.createElement("tr");cell(r,item.label);cell(r,item.delivery.toFixed(1)+"%");cell(r,item.critical.toFixed(1)+"%");cell(r,item.sic.toFixed(1)+"%");cell(r,item.node.toFixed(1)+"%");cell(r,item.latency.toFixed(1)+" ms");cell(r,item.alert);body.appendChild(r)}
+ host.appendChild(summary);
+}
+async function runPipeline(lossOverride=null){
+ if(running)return null;
+ running=true;$("error").textContent="";$("run-button").disabled=true;$("run-button").textContent="Running…";document.body.classList.add("running");
+ try{
+   const loss=lossOverride===null?Number($("node-loss").value):Number(lossOverride);
+   $("node-loss").value=String(loss);
+   document.querySelectorAll("#scenario-presets button").forEach(b=>b.classList.toggle("active",Number(b.dataset.loss)===loss));
+   const r=await fetch(api+"/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region_id:$("region-select").value,communication_attempts:Number($("attempts").value),node_loss_probability:loss,seed:Math.floor(Math.random()*1000000)})});
+   const p=await r.json();if(!r.ok)throw Error(p.detail||"Pipeline failed");
+   render(p);return p;
+ }catch(e){$("error").textContent=e.message;return null}
+ finally{running=false;$("run-button").disabled=false;$("run-button").textContent="Run pipeline";document.body.classList.remove("running")}
 }
 async function loadRegions(){const r=await fetch(api+"/api/regions");if(!r.ok)throw Error("Could not load regions");const regions=await r.json();const s=$("region-select");s.replaceChildren();regions.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=x.name+" — "+x.river;s.appendChild(o)});$("run-button").disabled=!regions.length;if(regions.length)$("region-heading").textContent=regions[0].name;s.addEventListener("change",()=>{const x=regions.find(v=>v.id===s.value);$("region-heading").textContent=x?x.name:"Choose a region"})}
-$("run-button").addEventListener("click",async()=>{ $("error").textContent="";$("run-button").disabled=true;$("run-button").textContent="Running…";try{const r=await fetch(api+"/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region_id:$("region-select").value,communication_attempts:Number($("attempts").value),node_loss_probability:Number($("node-loss").value),seed:Math.floor(Math.random()*1000000)})});const p=await r.json();if(!r.ok)throw Error(p.detail||"Pipeline failed");render(p)}catch(e){$("error").textContent=e.message}finally{$("run-button").disabled=false;$("run-button").textContent="Run pipeline"}});
+$("run-button").addEventListener("click",()=>runPipeline());
+document.querySelectorAll("#scenario-presets button").forEach(b=>b.addEventListener("click",async()=>{await runPipeline(Number(b.dataset.loss))}));
+$("node-loss").addEventListener("change",()=>document.querySelectorAll("#scenario-presets button").forEach(b=>b.classList.toggle("active",Number(b.dataset.loss)===Number($("node-loss").value))));
+$("copy-message").addEventListener("click",async()=>{if(!lastRunData)return;$("copy-message").textContent="Copying…";try{await navigator.clipboard.writeText(lastRunData.semantic_message||"");$("copy-message").textContent="Copied ✓";$("copy-message").classList.add("copy-ok");setTimeout(()=>{$("copy-message").textContent="Copy semantic message";$("copy-message").classList.remove("copy-ok")},1400)}catch(e){$("copy-message").textContent="Copy failed"}});
+$("download-json").addEventListener("click",()=>{if(!lastRunData)return;const blob=new Blob([JSON.stringify(lastRunData,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="floodai-run-"+Date.now()+".json";a.click();URL.revokeObjectURL(a.href)});
+$("clear-history").addEventListener("click",()=>{history=[];renderHistory()});
+$("attempts").addEventListener("change",()=>{if(lastRunData)$("last-run").textContent="Ready to rerun with "+$("attempts").value+" communication attempts.";});
+
 (async()=>{try{const r=await fetch(api+"/api/health");if(!r.ok)throw Error("API unavailable");$("service-badge").textContent="Local API connected · simulation";await loadRegions()}catch(e){$("service-badge").textContent="Local API unavailable";$("error").textContent=e.message}})();
 </script>
 </body></html>
