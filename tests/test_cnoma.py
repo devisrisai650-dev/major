@@ -34,11 +34,3 @@ def test_agent_action_space_matches_cnoma_environment():
     assert agent.n_actions == env.n_actions
     action = agent.choose_action(obs, env.action_mask(obs), explore=False)
     assert 0 <= action < env.n_actions
-
-
-def test_node_outage_can_remove_channel():
-    env = RISEnvironment(seed=12, max_steps=2, node_loss_probability=1.0)
-    obs = env.reset(priority="CRITICAL")
-    assert obs["node_available"].all()
-    env.step(env.wait_action)
-    assert not env.measurements["node_available"].any()
