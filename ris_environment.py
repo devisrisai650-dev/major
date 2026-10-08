@@ -28,7 +28,6 @@ class RISEnvironment:
         snr_noise_std_db=1.5,
         observation_delay=1,
         channel_context=None,
-        node_loss_probability=0.0,
     ):
         if observation_mode not in {"partial", "oracle"}:
             raise ValueError("observation_mode must be 'partial' or 'oracle'")
@@ -46,7 +45,6 @@ class RISEnvironment:
         self.snr_noise_std_db = snr_noise_std_db
         self.observation_delay = observation_delay
         self.channel_context = channel_context or {}
-        self.node_loss_probability = float(np.clip(node_loss_probability, 0.0, 1.0))
         self.simulator = ChannelSimulator(
             n_channels, n_ris_configs, n_ris_elements, seed
         )
@@ -83,7 +81,6 @@ class RISEnvironment:
             water_depth_m=self.channel_context.get("water_depth_m"),
             debris_density=self.channel_context.get("debris_density"),
             los_obstruction=self.channel_context.get("los_obstruction"),
-            node_loss_probability=self.node_loss_probability,
         )
         self.measurements = self.simulator.reset()
         self._history.clear()
@@ -134,7 +131,7 @@ class RISEnvironment:
             )
             result["available"] = (
                 result["snr_db"] >= -3.0
-            ) & result["node_available"][:, None]
+            )
         result["cnoma_success_probability"] = self._cnoma_probability(result)
         return result
 
@@ -147,7 +144,6 @@ class RISEnvironment:
             "latency_ms": observed["latency_ms"].copy(),
             "throughput_mbps": observed["throughput_mbps"].copy(),
             "available": observed["available"].copy(),
-            "node_available": observed["node_available"].copy(),
             "rain_attenuation_db": float(observed["rain_attenuation_db"]),
             "doppler_hz": float(observed["doppler_hz"]),
             "k_factor": observed["k_factor"].copy(),
@@ -282,10 +278,6 @@ class RISEnvironment:
             "throughput_mbps": throughput_mbps,
             "changed_ris": changed_ris,
             "changed_power": changed_power,
-            "node_available": (
-                bool(self.measurements["node_available"][selected_channel])
-                if selected_channel is not None else False
-            ),
             "rain_attenuation_db": float(self.measurements["rain_attenuation_db"]),
             "doppler_hz": float(self.measurements["doppler_hz"]),
             "waited": action == self.wait_action,
