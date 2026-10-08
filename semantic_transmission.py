@@ -25,8 +25,10 @@ def transmit_semantic_message(
     max_attempts: int = 5,
     seed: int = 2026,
     learn: bool = False,
+    channel_context: dict | None = None,
+    node_loss_probability: float = 0.0,
 ) -> dict:
-    """Transmit one semantic packet; learning is opt-in."""
+    """Transmit one semantic packet through the software RIS-CNOMA loop."""
     if not packet:
         raise ValueError("Semantic packet must not be empty")
     if max_attempts < 1:
@@ -36,13 +38,18 @@ def transmit_semantic_message(
     agent = QLearningRISAgent(seed=seed)
     if not policy_path.exists():
         raise FileNotFoundError(
-            f"Trained RIS policy not found: {policy_path}. "
+            f"Trained RIS-CNOMA policy not found: {policy_path}. "
             "Run evaluate_ris_agent.py first to train the software policy."
         )
     agent.load(policy_path)
     agent.epsilon = 0.0
 
-    env = RISEnvironment(\n        seed=seed, max_steps=max_attempts,\n        channel_context=channel_context,\n        node_loss_probability=node_loss_probability,\n    )
+    env = RISEnvironment(
+        seed=seed,
+        max_steps=max_attempts,
+        channel_context=channel_context,
+        node_loss_probability=node_loss_probability,
+    )
     priority = priority_for_message(priorities)
     observation = env.reset(priority=priority)
     attempts = []
@@ -54,9 +61,7 @@ def transmit_semantic_message(
             observation, env.action_mask(observation), explore=False
         )
         next_observation, reward, env_done, info = env.step(action, packet=packet)
-        terminal = bool(
-            info["delivered"] or env_done or attempt_number == max_attempts
-        )
+        terminal = bool(info["delivered"] or env_done or attempt_number == max_attempts)
         next_state = agent.encode_state(next_observation)
         if learn:
             agent.learn(
@@ -71,11 +76,22 @@ def transmit_semantic_message(
             "attempt": attempt_number,
             "candidate": info["channel_candidate"],
             "ris_configuration": info["selected_ris_config"],
+            "power_profile": info["power_profile"],
+            "power_user1": info["power_user1"],
+            "power_user2": info["power_user2"],
             "channel_condition": info["channel_condition"],
             "snr_db": info["snr_db"],
+            "user1_sinr_db": info["user1_sinr_db"],
+            "user2_sinr_db": info["user2_sinr_db"],
+            "sic_success": info["sic_success"],
+            "cnoma_user1_decoded": info["cnoma_user1_decoded"],
+            "cnoma_user2_decoded": info["cnoma_user2_decoded"],
             "latency_ms": info["latency_ms"],
             "delivered": info["delivered"],
             "waited": info["waited"],
+            "node_available": info["node_available"],
+            "rain_attenuation_db": info["rain_attenuation_db"],
+            "doppler_hz": info["doppler_hz"],
             "reward": reward,
         })
         observation = next_observation
@@ -95,4 +111,7 @@ def transmit_semantic_message(
         "simulation_only": True,
         "learned": learn,
         "used_seed": seed,
+        "cnoma_enabled": True,
+        "node_loss_probability": node_loss_probability,
+        "channel_context": channel_context or {},
     }
