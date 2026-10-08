@@ -173,8 +173,9 @@ class RISEnvironment:
             for r in range(self.n_ris_configs):
                 if not availability[c, r]:
                     continue
-                base = (c * self.n_ris_configs + r) * self.n_power_profiles
-                mask[base:base + self.n_power_profiles] = True
+                for power in range(self.n_power_profiles):
+                    action = power * self.n_channels * self.n_ris_configs + c * self.n_ris_configs + r
+                    mask[action] = True
         if not mask.any():
             mask[self.wait_action] = True
         return mask
@@ -182,7 +183,8 @@ class RISEnvironment:
     def action_to_tuple(self, action):
         if action == self.wait_action:
             return None
-        block, power = divmod(int(action), self.n_power_profiles)
+        block = int(action) % (self.n_channels * self.n_ris_configs)
+        power = int(action) // (self.n_channels * self.n_ris_configs)
         channel, ris = divmod(block, self.n_ris_configs)
         return channel, ris, power
 
@@ -325,7 +327,7 @@ class RISEnvironment:
                     if utility > best_value:
                         best_value = utility
                         best = (
-                            (c * self.n_ris_configs + r) * self.n_power_profiles
-                            + power
+                            power * self.n_channels * self.n_ris_configs
+                            + c * self.n_ris_configs + r
                         )
         return int(best)
