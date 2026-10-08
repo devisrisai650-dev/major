@@ -1,9 +1,44 @@
 """Tabular Q-learning agent for the software-only RIS environment."""
 from __future__ import annotations
+
+from contextlib import contextmanager
 import os
 from pathlib import Path
+
 import numpy as np
+
 from ris_environment import PRIORITY_WEIGHT, RIS_SWITCH_PENALTY
+
+
+@contextmanager
+def _file_lock(lock_path: Path):
+    """Cross-platform advisory lock used for Windows-safe policy writes."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            handle.write(b"0")
+            handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
 
 class QLearningRISAgent:
     def __init__(self, n_channels=3, n_ris_configs=8, learning_rate=0.12,
@@ -88,27 +123,33 @@ class QLearningRISAgent:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_name(f".{path.name}.tmp.npz")
-        try:
-            np.savez_compressed(
-                temp, q=self.q, n_channels=self.n_channels,
-                n_ris_configs=self.n_ris_configs,
-                learned_value_weight=self.learned_value_weight,
-            )
-            os.replace(temp, path)
-        finally:
-            if temp.exists():
-                temp.unlink()
+        lock_path = path.with_name(f".{path.name}.lock")
+        with _file_lock(lock_path):
+            try:
+                np.savez_compressed(
+                    temp, q=self.q, n_channels=self.n_channels,
+                    n_ris_configs=self.n_ris_configs,
+                    learned_value_weight=self.learned_value_weight,
+                )
+                os.replace(temp, path)
+            finally:
+                if temp.exists():
+                    temp.unlink()
 
     def load(self, path):
-        with np.load(path) as saved:
-            if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
-                raise ValueError("Saved Q-table dimensions do not match this environment")
-            table = saved["q"]
-            if table.shape != self.q.shape:
-                raise ValueError("Saved Q-table has an unexpected shape")
-            self.q[:] = table
-            if "learned_value_weight" in saved:
-                self.learned_value_weight = float(saved["learned_value_weight"])
+        path = Path(path)
+        lock_path = path.with_name(f".{path.name}.lock")
+        with _file_lock(lock_path):
+            with np.load(path) as saved:
+                if int(saved["n_channels"]) != self.n_channels or int(saved["n_ris_configs"]) != self.n_ris_configs:
+                    raise ValueError("Saved Q-table dimensions do not match this environment")
+                table = saved["q"]
+                if table.shape != self.q.shape:
+                    raise ValueError("Saved Q-table has an unexpected shape")
+                self.q[:] = table
+                if "learned_value_weight" in saved:
+                    self.learned_value_weight = float(saved["learned_value_weight"])
+
 
 def train_agent(agent, env, episodes=1200, max_steps=None):
     episode_rewards = []
