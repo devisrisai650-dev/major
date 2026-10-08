@@ -26,7 +26,6 @@ def transmit_semantic_message(
     seed: int = 2026,
     learn: bool = False,
     channel_context: dict | None = None,
-    node_loss_probability: float = 0.0,
 ) -> dict:
     """Transmit one semantic packet through the software RIS-CNOMA loop."""
     if not packet:
@@ -48,7 +47,6 @@ def transmit_semantic_message(
         seed=seed,
         max_steps=max_attempts,
         channel_context=channel_context,
-        node_loss_probability=node_loss_probability,
     )
     priority = priority_for_message(priorities)
     observation = env.reset(priority=priority)
@@ -90,7 +88,6 @@ def transmit_semantic_message(
             "throughput_mbps": info["throughput_mbps"],
             "delivered": info["delivered"],
             "waited": info["waited"],
-            "node_available": info["node_available"],
             "rain_attenuation_db": info["rain_attenuation_db"],
             "doppler_hz": info["doppler_hz"],
             "reward": reward,
@@ -128,6 +125,5 @@ def transmit_semantic_message(
         "learned": learn,
         "used_seed": seed,
         "cnoma_enabled": True,
-        "node_loss_probability": node_loss_probability,
         "channel_context": channel_context or {},
     }
