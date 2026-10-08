@@ -68,7 +68,6 @@ def _communication_kpis(transmission):
         "delivery_rate_percent": 100.0 * len(delivered) / len(attempts) if attempts else 0.0,
         "critical_delivery_percent": 100.0 if transmission.get("critical_delivered") else 0.0,
         "sic_success_percent": 100.0 * sum(bool(x.get("sic_success")) for x in attempts) / len(attempts) if attempts else 0.0,
-        "node_availability_percent": 100.0 * sum(bool(x.get("node_available")) for x in attempts) / len(attempts) if attempts else 0.0,
         "mean_latency_ms": transmission.get("mean_latency_ms"),
         "mean_aoi_ms": transmission.get("delivery_aoi_ms"),
         "mean_throughput_mbps": transmission.get("mean_throughput_mbps"),
@@ -99,9 +98,7 @@ def _communication_alert(transmission):
             "sic_success": all(bool(item.get("sic_success")) for item in successful),
         }
     reason = "Packet delivery failed after retry limit."
-    if last.get("node_available") is False:
-        reason = "Selected simulated communication node became unavailable."
-    elif last.get("sic_success") is False:
+    if last.get("sic_success") is False:
         reason = "CNOMA SIC/decoding failed under the simulated channel."
     return {
         "status": "CRITICAL",
