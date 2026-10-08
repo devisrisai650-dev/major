@@ -160,10 +160,10 @@ def train_agent(agent, env, episodes=1200, max_steps=None):
         total_reward = 0.0
         for _ in range(horizon):
             state = agent.encode_state(observation)
-            action = agent.choose_action(observation, env.action_mask(), explore=True)
+            action = agent.choose_action(observation, env.action_mask(observation), explore=True)
             next_observation, reward, done, _ = env.step(action)
             next_state = agent.encode_state(next_observation)
-            agent.learn(state, action, reward, next_state, env.action_mask(), done)
+            agent.learn(state, action, reward, next_state, env.action_mask(next_observation), done)
             total_reward += reward
             observation = next_observation
             if done:
