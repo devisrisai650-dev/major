@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from api import RunRequest, health, run_pipeline
+from api import RunRequest, _communication_kpis, health, run_pipeline
 
 
 def test_api_health():
@@ -80,3 +80,23 @@ def test_api_learning_is_opt_in_and_persisted_policy_is_not_changed_when_false(t
     assert result["provenance"]["learning_enabled"] is False
     assert policy.read_bytes() == before
     assert Path(result["communication"]["policy_path"]) == policy
+
+def test_api_reports_mean_delivery_and_final_aoi_separately():
+    result = _communication_kpis({
+        "attempts": [
+            {"delivered": False, "sic_success": False, "snr_db": 2.0},
+            {"delivered": True, "sic_success": True, "snr_db": 8.0},
+        ],
+        "critical_delivered": True,
+        "mean_latency_ms": 25.0,
+        "mean_aoi_ms": 35.0,
+        "delivery_aoi_ms": 50.0,
+        "final_aoi_ms": 50.0,
+        "mean_throughput_mbps": 1.2,
+    })
+
+    assert result["mean_aoi_ms"] == 35.0
+    assert result["delivery_aoi_ms"] == 50.0
+    assert result["final_aoi_ms"] == 50.0
+    assert result["delivery_rate_percent"] == 50.0
+    assert result["sic_success_percent"] == 50.0
