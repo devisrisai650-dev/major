@@ -1,6 +1,8 @@
 name: FloodAI Research Evaluation
 
 on:
+  pull_request:
+    branches: ["main"]
   push:
     branches: ["feature/evaluation-validation", "feature/floodai-completion"]
     paths:
