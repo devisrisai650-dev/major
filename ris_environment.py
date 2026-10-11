@@ -136,7 +136,10 @@ class RISEnvironment:
                 1.0,
             )
             result["available"] = (
-                result["snr_db"] >= -3.0
+                (result["snr_db"] >= -3.0)
+                & result.get(
+                    "node_available", np.ones(self.n_channels, dtype=bool)
+                )[:, None]
             )
         result["cnoma_delivery_feasibility"] = self._cnoma_probability(result)
         return result
