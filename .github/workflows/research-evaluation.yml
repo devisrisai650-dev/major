@@ -2,10 +2,11 @@ name: FloodAI Research Evaluation
 
 on:
   push:
-    branches: ["feature/evaluation-validation"]
+    branches: ["feature/evaluation-validation", "feature/floodai-completion"]
     paths:
       - ".github/workflows/research-evaluation.yml"
       - "evaluate_ris_agent.py"
+      - "evaluate_access_modes.py"
       - "plot_results.py"
       - "ris_agent.py"
       - "ris_environment.py"
@@ -74,6 +75,8 @@ jobs:
             --eval-episodes-per-seed 1 \
             --steps "$STEPS" \
             --output-dir outputs
+      - name: Run controlled OMA/CNOMA/RIS-CNOMA ablation
+        run: python evaluate_access_modes.py --seeds 10 --steps 200 --output outputs/access_mode_ablation.csv
       - name: Generate plots
         run: python plot_results.py
       - name: Upload reproducible research outputs
