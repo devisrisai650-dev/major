@@ -46,13 +46,21 @@ class ChannelSimulator:
         water_depth_m: float | None = None,
         debris_density: float | None = None,
         los_obstruction: float | None = None,
+        node_outage_probability: float = 0.0,
+        node_recovery_probability: float = 0.25,
     ):
+        if not 0.0 <= node_outage_probability <= 1.0:
+            raise ValueError("node_outage_probability must be between 0 and 1")
+        if not 0.0 <= node_recovery_probability <= 1.0:
+            raise ValueError("node_recovery_probability must be between 0 and 1")
         self.environment = {
             "rain_mm": max(0.0, float(rain_mm or 0.0)),
             "flow_velocity_mps": max(0.0, float(flow_velocity_mps or 0.0)),
             "water_depth_m": max(0.0, float(water_depth_m or 0.0)),
             "debris_density": float(np.clip(debris_density or 0.0, 0.0, 1.0)),
             "los_obstruction": float(np.clip(los_obstruction or 0.0, 0.0, 1.0)),
+            "node_outage_probability": float(node_outage_probability),
+            "node_recovery_probability": float(node_recovery_probability),
         }
 
     def reset(self):
@@ -63,6 +71,7 @@ class ChannelSimulator:
         )
         self.los_phase = self.rng.uniform(-np.pi, np.pi, self.n_channels)
         self.k_factor = self._environment_k_factor()
+        self.node_available = np.ones(self.n_channels, dtype=bool)
         self.noise_db = self.rng.normal(0.0, 1.5, self.n_channels)
         self.link_budget_db = np.linspace(5.0, 10.0, self.n_channels)
         return self.measure()
@@ -83,6 +92,15 @@ class ChannelSimulator:
         return velocity * self.carrier_hz / self.c_light
 
     def advance(self):
+        outage_probability = self.environment.get("node_outage_probability", 0.0)
+        recovery_probability = self.environment.get("node_recovery_probability", 0.25)
+        for index in range(self.n_channels):
+            if self.node_available[index]:
+                if self.rng.random() < outage_probability:
+                    self.node_available[index] = False
+            elif self.rng.random() < recovery_probability:
+                self.node_available[index] = True
+
         innovation = np.sqrt(1.0 - self.rho**2)
         self.direct = self.rho * self.direct + innovation * self._complex_normal(
             self.n_channels
@@ -138,6 +156,10 @@ class ChannelSimulator:
                         30,
                     )
                 )
+                if not self.node_available[c]:
+                    # Explicit relay/node outage: unavailable links cannot be
+                    # selected even if the latent fading calculation is strong.
+                    snr_db = -25.0
                 p_success = float(
                     1.0
                     / (
@@ -160,7 +182,9 @@ class ChannelSimulator:
             "success_probability": success_probability,
             "latency_ms": latency_ms,
             "throughput_mbps": throughput_mbps,
-            "available": snr >= -3.0,
+            "available": (snr >= -3.0) & self.node_available[:, None],
+            "node_available": self.node_available.copy(),
+            "node_outage_count": int((~self.node_available).sum()),
             "rain_attenuation_db": rain_loss,
             "doppler_hz": self._doppler_hz(),
             "k_factor": self.k_factor.copy(),
