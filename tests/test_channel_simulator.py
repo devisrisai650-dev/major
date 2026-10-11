@@ -69,6 +69,10 @@ def test_environment_masks_all_actions_during_total_node_outage():
     observation = env.reset(priority="CRITICAL")
     first_action = int(np.flatnonzero(env.action_mask(observation))[0])
     observation, _, _, _ = env.step(first_action)
+    # The default observation model has a one-step delay, so advance once more
+    # before asserting that the outage has reached the controller's observation.
+    second_action = int(np.flatnonzero(env.action_mask(observation))[0])
+    observation, _, _, _ = env.step(second_action)
 
     mask = env.action_mask(observation)
     assert mask[env.wait_action]
