@@ -119,6 +119,48 @@ def plot_training_curves():
     plt.close(fig)
 
 
+
+def plot_access_mode_ablation():
+    path = OUT / "access_mode_ablation.csv"
+    if not path.exists():
+        print("Skipping access-mode plot: outputs/access_mode_ablation.csv not found.")
+        return
+    data = pd.read_csv(path)
+    grouped = data.groupby(["scenario", "mode"], as_index=False).agg(
+        delivery_mean=("delivery_rate", "mean"),
+        delivery_std=("delivery_rate", "std"),
+    )
+    grouped["delivery_std"] = grouped["delivery_std"].fillna(0.0)
+    scenarios = list(grouped["scenario"].unique())
+    modes = list(grouped["mode"].unique())
+    x = list(range(len(scenarios)))
+    width = 0.24
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for index, mode in enumerate(modes):
+        subset = grouped[grouped["mode"] == mode].set_index("scenario").reindex(scenarios)
+        positions = [
+            value + (index - (len(modes) - 1) / 2) * width for value in x
+        ]
+        ax.bar(
+            positions,
+            subset["delivery_mean"],
+            width=width,
+            yerr=subset["delivery_std"],
+            capsize=3,
+            label=mode,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(scenarios)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel("Synthetic channel scenario")
+    ax.set_ylabel("Critical-stream delivery rate")
+    ax.set_title("OMA vs CNOMA vs RIS-CNOMA (perfect-CSI PHY ablation)")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(OUT / "RIS_ACCESS_MODE_ABLATION.png", dpi=180)
+    plt.close(fig)
+
 def main():
     summary = pd.read_csv(OUT / "ris_summary.csv")
     plot_metric(summary, "delivery_rate", "Delivery ratio", "RIS_RESULTS.png")
@@ -133,7 +175,8 @@ def main():
     if priority_path.exists():
         plot_priority_latency(pd.read_csv(priority_path))
     plot_training_curves()
-    print("Plots generated from simulation summary and training curves")
+    plot_access_mode_ablation()
+    print("Plots generated from simulation summaries, ablations and training curves")
 
 
 if __name__ == "__main__":
