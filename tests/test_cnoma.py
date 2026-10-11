@@ -64,3 +64,33 @@ def test_agent_action_space_matches_cnoma_environment():
     assert agent.n_actions == env.n_actions
     action = agent.choose_action(obs, env.action_mask(obs), explore=False)
     assert 0 <= action < env.n_actions
+
+def test_cnoma_is_symmetric_when_user_channel_indices_are_swapped():
+    model = CNOMASimulator()
+    first = model.evaluate(1.0, 14.0, power_profile=1)
+    swapped = model.evaluate(14.0, 1.0, power_profile=1)
+
+    assert first.weak_user == 1
+    assert swapped.weak_user == 2
+    assert first.power_user1 == swapped.power_user2
+    assert first.power_user2 == swapped.power_user1
+    assert np.isclose(first.user1_sinr_db, swapped.user2_sinr_db)
+    assert np.isclose(first.user2_sinr_db, swapped.user1_sinr_db)
+    assert first.user1_decoded == swapped.user2_decoded
+    assert first.user2_decoded == swapped.user1_decoded
+
+
+def test_cnoma_low_snr_does_not_decode_streams_or_claim_sic():
+    model = CNOMASimulator(sinr_threshold_db=3.0)
+    result = model.evaluate(-20.0, -18.0, power_profile=0)
+
+    assert result.user1_decoded is False
+    assert result.user2_decoded is False
+    assert result.sic_success is False
+
+
+def test_power_profiles_are_valid_weak_to_strong_allocations():
+    for index, (weak_power, strong_power) in enumerate(CNOMASimulator.POWER_PROFILES):
+        assert CNOMASimulator.power_profile(index) == (weak_power, strong_power)
+        assert weak_power > strong_power
+        assert np.isclose(weak_power + strong_power, 1.0)
