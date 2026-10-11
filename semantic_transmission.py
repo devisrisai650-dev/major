@@ -9,6 +9,29 @@ from ris_environment import RISEnvironment
 PRIORITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
 
+def summarize_aoi(attempts: list[dict]) -> dict:
+    """Return cumulative packet age across sequential transmission attempts.
+
+    Attempt latency is used as simulated elapsed time; processing, queueing and
+    propagation outside the model are not represented.
+    """
+    age = 0.0
+    ages = []
+    delivery_aoi = None
+    for item in attempts:
+        latency = item.get("latency_ms")
+        if latency is not None:
+            age += max(0.0, float(latency))
+        ages.append(age)
+        if item.get("delivered") and delivery_aoi is None:
+            delivery_aoi = age
+    return {
+        "mean_aoi_ms": sum(ages) / len(ages) if ages else None,
+        "delivery_aoi_ms": delivery_aoi,
+        "final_aoi_ms": age if ages else None,
+    }
+
+
 def priority_for_message(priorities: dict) -> str:
     available = [
         item["priority"]
@@ -106,13 +129,16 @@ def transmit_semantic_message(
     delivered = received == packet
     delivered_attempt = next((item for item in attempts if item["delivered"]), None)
     critical_delivered = delivered and priority == "CRITICAL"
+    aoi_summary = summarize_aoi(attempts)
     return {
         "priority": priority,
         "delivered": delivered,
         "critical_delivered": critical_delivered,
         "delivery_attempt": delivered_attempt["attempt"] if delivered_attempt else None,
-        "delivery_latency_ms": delivered_attempt["latency_ms"] if delivered_attempt else None,
-        "delivery_aoi_ms": delivered_attempt["latency_ms"] if delivered_attempt else None,
+        "delivery_latency_ms": aoi_summary["delivery_aoi_ms"],
+        "delivery_aoi_ms": aoi_summary["delivery_aoi_ms"],
+        "mean_aoi_ms": aoi_summary["mean_aoi_ms"],
+        "final_aoi_ms": aoi_summary["final_aoi_ms"],
         "mean_latency_ms": (
             sum(float(item["latency_ms"]) for item in attempts if item["latency_ms"] is not None)
             / max(1, sum(item["latency_ms"] is not None for item in attempts))
