@@ -81,6 +81,12 @@ class RISEnvironment:
             water_depth_m=self.channel_context.get("water_depth_m"),
             debris_density=self.channel_context.get("debris_density"),
             los_obstruction=self.channel_context.get("los_obstruction"),
+            node_outage_probability=self.channel_context.get(
+                "node_outage_probability", 0.0
+            ),
+            node_recovery_probability=self.channel_context.get(
+                "node_recovery_probability", 0.25
+            ),
         )
         self.measurements = self.simulator.reset()
         self._history.clear()
@@ -144,6 +150,10 @@ class RISEnvironment:
             "latency_ms": observed["latency_ms"].copy(),
             "throughput_mbps": observed["throughput_mbps"].copy(),
             "available": observed["available"].copy(),
+            "node_available": observed.get(
+                "node_available", np.ones(self.n_channels, dtype=bool)
+            ).copy(),
+            "node_outage_count": int(observed.get("node_outage_count", 0)),
             "rain_attenuation_db": float(observed["rain_attenuation_db"]),
             "doppler_hz": float(observed["doppler_hz"]),
             "k_factor": observed["k_factor"].copy(),
@@ -283,6 +293,10 @@ class RISEnvironment:
             "changed_power": changed_power,
             "rain_attenuation_db": float(self.measurements["rain_attenuation_db"]),
             "doppler_hz": float(self.measurements["doppler_hz"]),
+            "node_available": self.measurements.get(
+                "node_available", np.ones(self.n_channels, dtype=bool)
+            ).copy(),
+            "node_outage_count": int(self.measurements.get("node_outage_count", 0)),
             "waited": action == self.wait_action,
             "sender_packet": packet,
             "receiver_packet": receiver_packet,
