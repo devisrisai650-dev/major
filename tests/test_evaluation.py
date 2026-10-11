@@ -14,6 +14,16 @@ def test_required_policies_and_scenarios():
         "agent", "random", "fixed", "initial_greedy", "myopic_noisy", "oracle"
     } == set(POLICIES)
     assert {"light", "moderate", "severe"} == set(SCENARIOS)
+    assert all(
+        0.0 <= scenario["node_outage_probability"] <= 1.0
+        and 0.0 <= scenario["node_recovery_probability"] <= 1.0
+        for scenario in SCENARIOS.values()
+    )
+    assert (
+        SCENARIOS["light"]["node_outage_probability"]
+        < SCENARIOS["moderate"]["node_outage_probability"]
+        < SCENARIOS["severe"]["node_outage_probability"]
+    )
 
 
 def test_weight_ablation_is_explicit():
