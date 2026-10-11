@@ -54,3 +54,23 @@ def test_relay_outage_removes_all_channel_actions_and_recovery_restores_them():
 
     assert recovered["node_available"].all()
     assert recovered["node_outage_count"] == 0
+
+def test_environment_masks_all_actions_during_total_node_outage():
+    from ris_environment import RISEnvironment
+
+    env = RISEnvironment(
+        seed=17,
+        max_steps=3,
+        channel_context={
+            "node_outage_probability": 1.0,
+            "node_recovery_probability": 0.0,
+        },
+    )
+    observation = env.reset(priority="CRITICAL")
+    first_action = int(np.flatnonzero(env.action_mask(observation))[0])
+    observation, _, _, _ = env.step(first_action)
+
+    mask = env.action_mask(observation)
+    assert mask[env.wait_action]
+    assert mask.sum() == 1
+    assert observation["node_outage_count"] == env.n_channels
