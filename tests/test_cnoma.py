@@ -3,6 +3,7 @@ import numpy as np
 from cnoma import CNOMASimulator
 from ris_agent import QLearningRISAgent
 from ris_environment import RISEnvironment
+from semantic_transmission import transmit_semantic_message
 
 
 def test_cnoma_power_profiles_and_sic():
@@ -42,3 +43,20 @@ def test_node_outage_can_remove_channel():
     assert obs["node_available"].all()
     env.step(env.wait_action)
     assert not env.measurements["node_available"].any()
+
+
+def test_transmission_records_throughput_for_summary(tmp_path):
+    policy_path = tmp_path / "policy.npz"
+    QLearningRISAgent(seed=13).save(policy_path)
+
+    result = transmit_semantic_message(
+        "test packet",
+        {"rainfall_current": {"available": True, "priority": "MEDIUM"}},
+        policy_path,
+        max_attempts=2,
+        seed=13,
+    )
+
+    assert result["attempts"]
+    assert all("throughput_mbps" in attempt for attempt in result["attempts"])
+    assert result["mean_throughput_mbps"] >= 0

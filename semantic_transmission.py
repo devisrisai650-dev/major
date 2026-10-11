@@ -87,6 +87,7 @@ def transmit_semantic_message(
             "cnoma_user1_decoded": info["cnoma_user1_decoded"],
             "cnoma_user2_decoded": info["cnoma_user2_decoded"],
             "latency_ms": info["latency_ms"],
+            "throughput_mbps": info["throughput_mbps"],
             "delivered": info["delivered"],
             "waited": info["waited"],
             "node_available": info["node_available"],
