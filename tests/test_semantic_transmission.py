@@ -46,26 +46,3 @@ def test_aoi_is_unavailable_when_there_are_no_attempts():
         "delivery_aoi_ms": None,
         "final_aoi_ms": None,
     }
-
-def test_aoi_accumulates_failed_attempt_age_until_successful_delivery():
-    from semantic_transmission import summarize_aoi
-
-    result = summarize_aoi([
-        {"latency_ms": 20.0, "delivered": False},
-        {"latency_ms": 30.0, "delivered": True},
-        {"latency_ms": 40.0, "delivered": False},
-    ])
-
-    assert result["delivery_aoi_ms"] == 50.0
-    assert result["final_aoi_ms"] == 90.0
-    assert result["mean_aoi_ms"] == (20.0 + 50.0 + 90.0) / 3
-
-
-def test_aoi_is_unavailable_when_there_are_no_attempts():
-    from semantic_transmission import summarize_aoi
-
-    assert summarize_aoi([]) == {
-        "mean_aoi_ms": None,
-        "delivery_aoi_ms": None,
-        "final_aoi_ms": None,
-    }
