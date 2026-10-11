@@ -1,0 +1,89 @@
+name: FloodAI Research Evaluation
+
+on:
+  push:
+    branches: ["feature/evaluation-validation"]
+    paths:
+      - ".github/workflows/research-evaluation.yml"
+      - "evaluate_ris_agent.py"
+      - "plot_results.py"
+      - "ris_agent.py"
+      - "ris_environment.py"
+      - "channel_simulator.py"
+      - "cnoma.py"
+      - "train_channel_model.py"
+      - "requirements*.txt"
+      - "tests/**"
+  workflow_dispatch:
+    inputs:
+      train_seeds:
+        description: "Independent training seeds"
+        required: true
+        default: "10"
+        type: string
+      train_episodes:
+        description: "Training episodes per seed"
+        required: true
+        default: "250"
+        type: string
+      eval_seeds:
+        description: "Independent evaluation seeds"
+        required: true
+        default: "5"
+        type: string
+      steps:
+        description: "Steps per episode"
+        required: true
+        default: "40"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Check code style
+        run: python -m ruff check .
+      - name: Train synthetic channel predictor
+        run: python train_channel_model.py --scenario baseline
+      - name: Run multi-seed RIS-CNOMA evaluation
+        env:
+          TRAIN_SEEDS: ${{ inputs.train_seeds || '10' }}
+          TRAIN_EPISODES: ${{ inputs.train_episodes || '250' }}
+          EVAL_SEEDS: ${{ inputs.eval_seeds || '5' }}
+          STEPS: ${{ inputs.steps || '40' }}
+        run: |
+          python -m evaluate_ris_agent \
+            --train-seeds "$TRAIN_SEEDS" \
+            --train-episodes "$TRAIN_EPISODES" \
+            --eval-seeds "$EVAL_SEEDS" \
+            --eval-episodes-per-seed 1 \
+            --steps "$STEPS" \
+            --output-dir outputs
+      - name: Generate plots
+        run: python plot_results.py
+      - name: Upload reproducible research outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: floodai-ris-cnoma-evaluation-${{ github.run_id }}
+          path: |
+            outputs/
+            models/ris_q_table.npz
+            models/xgboost_rician_model_v2.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -91,7 +91,7 @@ class QLearningRISAgent:
             block = int(action) % (self.n_channels * self.n_ris_configs)
             power = int(action) // (self.n_channels * self.n_ris_configs)
             channel, ris_config = divmod(block, self.n_ris_configs)
-            probability = float(observation["cnoma_success_probability"][channel, ris_config, power])
+            probability = float(observation["cnoma_delivery_feasibility"][channel, ris_config, power])
             latency = float(observation["latency_ms"][channel, ris_config])
             throughput = float(observation["throughput_mbps"][channel, ris_config])
             switch_cost = (
@@ -161,9 +161,26 @@ class QLearningRISAgent:
 
 
 def train_agent(agent, env, episodes=1200, max_steps=None):
+    """Train and record reward/epsilon curves with a horizon-aware epsilon schedule.
+
+    Exploration reaches epsilon_min by 80% of the requested training episodes,
+    then remains there for the final 20%. For very short runs it reaches the
+    floor after the first episode.
+    """
+    if episodes < 1:
+        raise ValueError("episodes must be positive")
     episode_rewards = []
+    epsilon_history = []
     priorities = list(PRIORITY_WEIGHT)
     horizon = max_steps or env.max_steps
+    start_epsilon = max(float(agent.epsilon), float(agent.epsilon_min))
+    decay_horizon = max(1, int(np.ceil(0.8 * episodes)))
+    if start_epsilon > agent.epsilon_min:
+        agent.epsilon_decay = (agent.epsilon_min / start_epsilon) ** (1.0 / decay_horizon)
+    else:
+        agent.epsilon = agent.epsilon_min
+        agent.epsilon_decay = 1.0
+
     for episode in range(episodes):
         observation = env.reset(priority=priorities[episode % len(priorities)])
         total_reward = 0.0
@@ -178,5 +195,9 @@ def train_agent(agent, env, episodes=1200, max_steps=None):
             if done:
                 break
         agent.decay_exploration()
-        episode_rewards.append(total_reward)
+        episode_rewards.append(float(total_reward))
+        epsilon_history.append(float(agent.epsilon))
+
+    agent.training_episode_rewards = episode_rewards.copy()
+    agent.training_epsilon_history = epsilon_history.copy()
     return episode_rewards

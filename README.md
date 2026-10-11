@@ -55,16 +55,16 @@ The simulator compares:
 
 - RIS-CNOMA Q-learning agent under partial/noisy/delayed observations
 - random policy
-- fixed policy
-- best-fixed policy
+- fixed-RIS policy (RIS configuration zero; waits if it is infeasible)
+- initial-greedy locked-action policy (locks its first greedy action; waits if infeasible)
 - myopic policy under noisy/delayed observations
 - perfect-CSI oracle reference
 
 The oracle is **not** the proposed system. It is an ideal reference that has perfect current channel information, so it helps quantify the performance gap caused by partial observability.
 
-The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`. Priority-wise latency/AoI results are written to `outputs/ris_priority_summary.csv`, the learned-value 0.0 versus default-weight ablation is written to `outputs/ris_weight_ablation.csv`, and run metadata is written to `outputs/experiment_metadata.json`.
+The evaluation uses at least 10 independent training seeds and disjoint evaluation seeds. Episode-level results are written to `outputs/ris_episode_results.csv`; aggregate means and seed-cluster bootstrap 95% confidence intervals are written to `outputs/ris_summary.csv`. Confidence intervals resample independent evaluation-seed clusters rather than treating repeated training-seed results on the same evaluation seed as independent. Priority-wise latency/AoI results are written to `outputs/ris_priority_summary.csv`, the learned-value 0.0 versus default-weight ablation is written to `outputs/ris_weight_ablation.csv`, per-training-seed episode rewards and epsilon values are written to `outputs/ris_training_curves.csv`, and run metadata is written to `outputs/experiment_metadata.json`. The training schedule decays epsilon to its configured floor by 80% of the requested episode count; `plot_results.py` generates reward and epsilon plots from the saved training CSV.
 
-Metrics include delivery ratio, critical-message delivery, priority-weighted delivery, latency, Age of Information (AoI), SNR, SINR, CNOMA SIC success, node availability, RIS reconfigurations and reward.
+Metrics include delivery ratio, critical-message delivery, priority-weighted delivered messages per step, mean latency and SNR across attempted transmissions (including failed deliveries), Age of Information (AoI), CNOMA SIC success across attempted transmissions, RIS reconfigurations and reward. Because the evaluation currently uses only five independent evaluation seeds by default, confidence intervals may be wide and should be interpreted cautiously.
 
 Results must be interpreted as simulated results. Whether the learned policy beats a baseline is determined from the generated CSVs, not from manually entered values.
 
@@ -76,22 +76,20 @@ If the required measured channel features are unavailable to the live pipeline, 
 
 ## RIS-CNOMA communication model
 
-The communication subsystem now includes a two-user software CNOMA model. A selected RIS configuration is combined with one of three power-allocation profiles, followed by superposition, SINR calculation and simplified SIC decoding. The critical semantic stream determines the priority-sensitive delivery objective. This is a software abstraction for reproducible research, not a modem implementation.
+The communication subsystem includes a two-user software CNOMA model. Each per-user input is post-noise SNR in dB from the channel simulator; the model uses normalized noise (1), so it does not add a second noise floor. Rain attenuation is applied once upstream when SNR is formed. The three power profiles are (weak-user share, strong-user share); shares are mapped to whichever logical user has the weaker/stronger channel, rather than fixed to user index. SIC succeeds when the strong-channel user can decode the weak user's stream at the configured SINR threshold. Packet delivery uses one threshold-outage rule (the critical stream must decode); the separate sigmoid channel score is retained only as a latency proxy, not a second delivery lottery. The feasibility tensor is named `cnoma_delivery_feasibility` because it is a deterministic threshold result, not a calibrated probability. This remains a software abstraction for reproducible research, not a modem implementation.
 
-The channel simulator includes correlated fading, Rician components, rain attenuation, a Doppler term driven by simulated flow velocity, dynamic node loss, and a virtual RIS phase codebook. Environmental values perturb the simulation; they are not measurements of the radio channel.
+The channel simulator includes correlated fading, Rician components, rain attenuation, a Doppler term driven by simulated flow velocity, and a virtual RIS phase codebook. Environmental values perturb the simulation; they are not measurements of the radio channel.
 
 The API/dashboard exposes a separate **communication alert** with NORMAL, DEGRADED, CRITICAL or OUTAGE states. This must never be interpreted as a flood warning. Flood status remains conservatively gated by the existing official-threshold and QC rules.
 
 ### New research scenarios
 
 - light, moderate and severe environmental/channel conditions
-- dynamic node outage
 - rain attenuation
 - Doppler variation
 - CNOMA SIC success/failure
 - partial observation versus perfect-CSI oracle
 
-The node_loss_probability API parameter is a simulation control. It does not represent a measured probability of physical node failure.
 
 ## Cloud-native deployment
 
@@ -145,7 +143,7 @@ Before treating a run as a reproducible project result:
 1. Run `pytest -q` and `ruff check .`.
 2. Train the synthetic channel model with an explicit named scenario.
 3. Run the multi-seed RIS evaluation with disjoint training and evaluation seeds.
-4. Inspect `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, and `outputs/experiment_metadata.json`.
+4. Inspect `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, `outputs/ris_training_curves.csv`, and `outputs/experiment_metadata.json`.
 5. Generate plots only from the CSV outputs.
 6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
 7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.

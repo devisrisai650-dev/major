@@ -1,7 +1,7 @@
 import numpy as np
 
 from cnoma import CNOMASimulator
-from ris_agent import QLearningRISAgent
+from ris_agent import QLearningRISAgent, train_agent
 from ris_environment import RISEnvironment
 from semantic_transmission import transmit_semantic_message
 
@@ -10,15 +10,42 @@ def test_cnoma_power_profiles_and_sic():
     model = CNOMASimulator()
     result = model.evaluate(12.0, 4.0, power_profile=0, critical_user=1)
     assert result.simulation_only is True
-    assert result.power_user1 == 0.70
-    assert result.power_user2 == 0.30
+    # User 1 has the stronger SNR here and therefore receives the smaller share.
+    assert result.weak_user == 2
+    assert result.strong_user == 1
+    assert result.power_user1 == 0.30
+    assert result.power_user2 == 0.70
     assert isinstance(result.sic_success, bool)
+
+
+
+def test_cnoma_power_assignment_follows_channel_order_not_user_index():
+    model = CNOMASimulator()
+    user1_weak = model.evaluate(2.0, 15.0, power_profile=0)
+    user2_weak = model.evaluate(15.0, 2.0, power_profile=0)
+    assert user1_weak.weak_user == 1
+    assert user1_weak.power_user1 == 0.70
+    assert user1_weak.power_user2 == 0.30
+    assert user2_weak.weak_user == 2
+    assert user2_weak.power_user1 == 0.30
+    assert user2_weak.power_user2 == 0.70
+
+
+def test_training_epsilon_reaches_floor_and_records_curves():
+    env = RISEnvironment(seed=19, max_steps=1)
+    agent = QLearningRISAgent(seed=19)
+    rewards = train_agent(agent, env, episodes=5, max_steps=1)
+    assert len(rewards) == 5
+    assert len(agent.training_epsilon_history) == 5
+    assert len(agent.training_episode_rewards) == 5
+    assert agent.training_epsilon_history[-1] == agent.epsilon_min
+    assert agent.training_epsilon_history[3] == agent.epsilon_min
 
 
 def test_ris_cnoma_environment_exposes_combined_actions():
     env = RISEnvironment(seed=7, max_steps=2)
     obs = env.reset(priority="CRITICAL")
-    assert obs["cnoma_success_probability"].shape == (3, 8, 3)
+    assert obs["cnoma_delivery_feasibility"].shape == (3, 8, 3)
     assert env.n_actions == 3 * 8 * 3 + 1
     action = int(np.flatnonzero(env.action_mask(obs))[0])
     _, _, _, info = env.step(action, packet="critical")
@@ -26,6 +53,9 @@ def test_ris_cnoma_environment_exposes_combined_actions():
     assert "user2_sinr_db" in info
     assert "sic_success" in info
     assert "power_user1" in info
+    assert info["delivery_model"] == "threshold_outage"
+    critical_decoded = info["cnoma_user1_decoded"]
+    assert info["delivered"] == critical_decoded
 
 
 def test_agent_action_space_matches_cnoma_environment():

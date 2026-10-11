@@ -28,7 +28,6 @@ class RISEnvironment:
         snr_noise_std_db=1.5,
         observation_delay=1,
         channel_context=None,
-        node_loss_probability=0.0,
     ):
         if observation_mode not in {"partial", "oracle"}:
             raise ValueError("observation_mode must be 'partial' or 'oracle'")
@@ -46,7 +45,6 @@ class RISEnvironment:
         self.snr_noise_std_db = snr_noise_std_db
         self.observation_delay = observation_delay
         self.channel_context = channel_context or {}
-        self.node_loss_probability = float(np.clip(node_loss_probability, 0.0, 1.0))
         self.simulator = ChannelSimulator(
             n_channels, n_ris_configs, n_ris_elements, seed
         )
@@ -83,7 +81,6 @@ class RISEnvironment:
             water_depth_m=self.channel_context.get("water_depth_m"),
             debris_density=self.channel_context.get("debris_density"),
             los_obstruction=self.channel_context.get("los_obstruction"),
-            node_loss_probability=self.node_loss_probability,
         )
         self.measurements = self.simulator.reset()
         self._history.clear()
@@ -134,8 +131,8 @@ class RISEnvironment:
             )
             result["available"] = (
                 result["snr_db"] >= -3.0
-            ) & result["node_available"][:, None]
-        result["cnoma_success_probability"] = self._cnoma_probability(result)
+            )
+        result["cnoma_delivery_feasibility"] = self._cnoma_probability(result)
         return result
 
     def observe(self):
@@ -143,11 +140,10 @@ class RISEnvironment:
         self._last_observation = {
             "snr_db": observed["snr_db"].copy(),
             "success_probability": observed["success_probability"].copy(),
-            "cnoma_success_probability": observed["cnoma_success_probability"].copy(),
+            "cnoma_delivery_feasibility": observed["cnoma_delivery_feasibility"].copy(),
             "latency_ms": observed["latency_ms"].copy(),
             "throughput_mbps": observed["throughput_mbps"].copy(),
             "available": observed["available"].copy(),
-            "node_available": observed["node_available"].copy(),
             "rain_attenuation_db": float(observed["rain_attenuation_db"]),
             "doppler_hz": float(observed["doppler_hz"]),
             "k_factor": observed["k_factor"].copy(),
@@ -223,16 +219,16 @@ class RISEnvironment:
                 float(self.measurements["snr_db"][second, selected_ris]),
                 power_profile,
                 critical_user=critical_user,
-                noise_db=-90.0 + float(self.measurements["rain_attenuation_db"]),
             )
             critical_decoded = (
                 cnoma_result.user1_decoded
                 if critical_user == 1
                 else cnoma_result.user2_decoded
             )
-            delivered = bool(critical_decoded and self.rng.random() < max(
-                0.05, float(self.measurements["success_probability"][selected_channel, selected_ris])
-            ))
+            # Single outage model: delivery occurs iff the critical stream decodes
+            # under the CNOMA/SIC SINR threshold. The channel's sigmoid is used
+            # only as a latency proxy, not as a second packet-delivery lottery.
+            delivered = bool(critical_decoded)
             channel_condition = (
                 "GOOD" if snr_db >= 10 else
                 "MODERATE" if snr_db >= 5 else
@@ -276,16 +272,15 @@ class RISEnvironment:
             "user1_sinr_db": cnoma_result.user1_sinr_db if cnoma_result else None,
             "user2_sinr_db": cnoma_result.user2_sinr_db if cnoma_result else None,
             "sic_success": cnoma_result.sic_success if cnoma_result else False,
+            "cnoma_weak_user": cnoma_result.weak_user if cnoma_result else None,
+            "cnoma_strong_user": cnoma_result.strong_user if cnoma_result else None,
+            "delivery_model": "threshold_outage",
             "cnoma_user1_decoded": cnoma_result.user1_decoded if cnoma_result else False,
             "cnoma_user2_decoded": cnoma_result.user2_decoded if cnoma_result else False,
             "latency_ms": latency_ms,
             "throughput_mbps": throughput_mbps,
             "changed_ris": changed_ris,
             "changed_power": changed_power,
-            "node_available": (
-                bool(self.measurements["node_available"][selected_channel])
-                if selected_channel is not None else False
-            ),
             "rain_attenuation_db": float(self.measurements["rain_attenuation_db"]),
             "doppler_hz": float(self.measurements["doppler_hz"]),
             "waited": action == self.wait_action,
@@ -300,7 +295,7 @@ class RISEnvironment:
     def greedy_baseline_action(self, observation=None):
         observation = observation or self._last_observation or self.observe()
         available = observation["available"]
-        p = observation["cnoma_success_probability"]
+        p = observation["cnoma_delivery_feasibility"]
         latency = observation["latency_ms"]
         throughput = observation["throughput_mbps"]
         weight = PRIORITY_WEIGHT[self.priority]

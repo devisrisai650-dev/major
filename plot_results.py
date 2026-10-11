@@ -75,6 +75,50 @@ def plot_cnoma_sic(summary):
     fig.savefig(OUT / "RIS_RESULTS_CNOMA_SIC.png", dpi=180)
     plt.close(fig)
 
+def plot_training_curves():
+    path = OUT / "ris_training_curves.csv"
+    if not path.exists():
+        print("Skipping training curves: outputs/ris_training_curves.csv not found.")
+        return
+    curves = pd.read_csv(path)
+    grouped = curves.groupby("episode", as_index=False).agg(
+        reward_mean=("total_reward", "mean"),
+        reward_std=("total_reward", "std"),
+        epsilon_mean=("epsilon", "mean"),
+    )
+    grouped["reward_std"] = grouped["reward_std"].fillna(0.0)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(grouped["episode"], grouped["reward_mean"], label="Mean episode reward")
+    ax.fill_between(
+        grouped["episode"],
+        grouped["reward_mean"] - grouped["reward_std"],
+        grouped["reward_mean"] + grouped["reward_std"],
+        alpha=0.2,
+        label="±1 SD across training seeds",
+    )
+    ax.set_xlabel("Training episode")
+    ax.set_ylabel("Total episode reward")
+    ax.set_title("FloodAI Q-learning training reward")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "RIS_TRAINING_REWARD.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(grouped["episode"], grouped["epsilon_mean"], label="Mean epsilon")
+    ax.set_xlabel("Training episode")
+    ax.set_ylabel("Exploration rate (epsilon)")
+    ax.set_ylim(0, 1.05)
+    ax.set_title("FloodAI Q-learning exploration schedule")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "RIS_TRAINING_EPSILON.png", dpi=180)
+    plt.close(fig)
+
+
 def main():
     summary = pd.read_csv(OUT / "ris_summary.csv")
     plot_metric(summary, "delivery_rate", "Delivery ratio", "RIS_RESULTS.png")
@@ -88,7 +132,8 @@ def main():
     priority_path = OUT / "ris_priority_summary.csv"
     if priority_path.exists():
         plot_priority_latency(pd.read_csv(priority_path))
-    print("Plots generated from outputs/ris_summary.csv")
+    plot_training_curves()
+    print("Plots generated from simulation summary and training curves")
 
 
 if __name__ == "__main__":
