@@ -19,18 +19,24 @@ SCENARIOS = {
         "delay": 0,
         "rain_mm": 5.0,
         "flow_velocity_mps": 0.5,
+        "node_outage_probability": 0.01,
+        "node_recovery_probability": 0.35,
     },
     "moderate": {
         "noise": 1.5,
         "delay": 1,
         "rain_mm": 25.0,
         "flow_velocity_mps": 1.0,
+        "node_outage_probability": 0.04,
+        "node_recovery_probability": 0.25,
     },
     "severe": {
         "noise": 2.25,
         "delay": 2,
         "rain_mm": 60.0,
         "flow_velocity_mps": 1.8,
+        "node_outage_probability": 0.12,
+        "node_recovery_probability": 0.15,
     },
 }
 POLICIES = ("agent", "random", "fixed", "initial_greedy", "myopic_noisy", "oracle")
@@ -98,6 +104,8 @@ def run_episode(env, policy, episode_seed, priority, scenario, agent=None):
     env.channel_context = {
         "rain_mm": SCENARIOS[scenario]["rain_mm"],
         "flow_velocity_mps": SCENARIOS[scenario]["flow_velocity_mps"],
+        "node_outage_probability": SCENARIOS[scenario]["node_outage_probability"],
+        "node_recovery_probability": SCENARIOS[scenario]["node_recovery_probability"],
     }
     env._history = deque(maxlen=max(2, env.observation_delay + 1))
     observation = env.reset(priority=priority)
