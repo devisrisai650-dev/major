@@ -24,6 +24,7 @@ from services.semantic_priority import (
     select_transmission_parameters,
 )
 from services.weather_service import get_weather_data
+from services.json_safe import to_json_safe
 from services.scenario_api import router as scenario_router
 
 def _flood_dashboard(analysis, water, weather, discharge):
@@ -273,7 +274,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     flood_dashboard = _flood_dashboard(analysis, water, weather, discharge)
     communication_kpis = _communication_kpis(transmission)
 
-    return {
+    return to_json_safe({
         "region": region,
         "weather": weather,
         "river_discharge": discharge,
@@ -313,4 +314,4 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             "flood_assessment": "NOT_ASSESSED is neither a flood warning nor an all-clear.",
             "communication": "SNR, latency, RIS and packet delivery are simulated.",
         },
-    }
+    })
