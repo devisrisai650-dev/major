@@ -1,4 +1,5 @@
 """SMTP delivery for verification and eligible flood alerts."""
+# ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import os, smtplib
 from email.message import EmailMessage
