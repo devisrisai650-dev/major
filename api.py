@@ -26,7 +26,7 @@ from services.semantic_priority import (
 from services.weather_service import get_weather_data
 from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
-from services.auth_service import get_user_from_request, init_db, require_admin, require_user
+from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_service import dispatch_verified_flood_alert
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
 
@@ -197,7 +197,12 @@ def homepage(request: Request):
     return FileResponse(Path(__file__).resolve().parent / "web" / "index.html")
 
 @app.get("/admin", include_in_schema=False)
-def admin_page(admin: dict[str, Any] = Depends(require_admin)):
+def admin_page(request: Request):
+    admin = get_user_from_request(request)
+    if not admin:
+        return RedirectResponse("/login", status_code=303)
+    if admin["role"] != "admin":
+        return RedirectResponse("/", status_code=303)
     return FileResponse(Path(__file__).resolve().parent / "web" / "admin.html")
 
 
