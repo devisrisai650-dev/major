@@ -1,12 +1,13 @@
 """Authentication, account preferences, and platform-admin API routes."""
 # ruff: noqa: E401, E701, E702
 from __future__ import annotations
+import hashlib
 import os
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from services.auth_service import (SESSION_COOKIE,_connect,admin_snapshot,audit,authenticate,create_session,create_user,
- get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email)
+ get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures)
 from services.email_service import send_verification_email
 router=APIRouter()
 class RegisterRequest(BaseModel):
@@ -37,10 +38,17 @@ def verify_email(token:str)->dict[str,str]:
     audit("email_verified"); return {"message":"Email verified. You can now sign in to FloodAI."}
 @router.post("/api/auth/login")
 def login(payload:LoginRequest,request:Request,response:Response)->dict[str,Any]:
+    client_ip=request.client.host if request.client else "unknown"
+    attempt_key=hashlib.sha256(f"{payload.email.strip().lower()}|{client_ip}".encode()).hexdigest()
+    if login_is_locked(attempt_key):
+        audit("login_throttled",target=payload.email.strip().lower(),outcome="blocked")
+        raise HTTPException(429,"Too many failed sign-in attempts. Try again in 15 minutes.")
     user=authenticate(payload.email,payload.password)
     if not user:
+        record_login_failure(attempt_key)
         audit("login_failed",target=payload.email.strip().lower(),outcome="failure")
         raise HTTPException(401,"Invalid credentials, unverified email, or inactive account.")
+    clear_login_failures(attempt_key)
     token,expires=create_session(user["id"]); secure=os.getenv("FLOODAI_COOKIE_SECURE","false").lower() in {"1","true","yes"}
     response.set_cookie(SESSION_COOKIE,token,max_age=60*60*12,httponly=True,secure=secure,samesite="strict",path="/")
     audit("login_success",actor=user); return {"user":user,"expires_at":expires}
