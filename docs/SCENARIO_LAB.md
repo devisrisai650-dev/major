@@ -1,54 +1,29 @@
-# FloodAI Scenario Lab
+# Internal synthetic scenario generator
 
-The Scenario Lab is a **synthetic demonstration mode** alongside (not a replacement for) the existing live-weather / historical-gauge replay pipeline.
+The seeded scenario generator is retained for developer tests and reproducible research. It is **not exposed through the user-facing API** and is not shown in the dashboard.
 
-## Start the lab
+## User dashboard
 
-Start the API as usual:
+The dashboard contains only:
+- Region / area selection
+- Time-of-day selection
+- Flood assessment and data/environmental alerts
+- Weather and environmental conditions
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn api:app --reload
-```
+The browser calls `POST /api/dashboard`. That response is allow-listed to the fields needed by the dashboard. It does not return synthetic time-series rows, semantic messages, internal channel predictions, RIS-CNOMA attempts, orchestrator decisions, or radio performance metrics. The synthetic scenario router is intentionally not mounted in `api.py`.
 
-Open the dashboard at `http://127.0.0.1:8000/`, scroll to **FloodAI Scenario Lab**, and choose a configured region (Kakinada, Vijayawada, or Machilipatnam), profile, rainfall input, water-level rise input, communication condition, start time, duration, playback speed, and random seed.
+## Internal code and tests
 
-The requested demonstration defaults are severe flood, 80 mm/h illustrative rainfall, 0.25 m/h illustrative water-level rise, partial communication outage, normal playback, and seed 2026. You can change the region and start time for another presentation. Duration is expressed as hourly samples; allowed values are 2–168 hours. Use the same configuration and seed to reproduce the same scenario ID and time series.
+- `services/flood_scenario_generator.py` creates seeded synthetic time series for reproducible experiments.
+- `services/scenario_api.py` contains developer-facing functions for scenario creation and simulated execution, but its router is not registered on the public FastAPI app.
+- `tests/test_flood_scenario_generator.py` and `tests/test_scenario_api.py` exercise the generator and internal functions without exposing their generated rows to the dashboard.
 
-## API
-
-- `GET /api/scenarios/options`: regions and supported selections.
-- `POST /api/scenarios/generate`: creates a seeded time series without invoking live services.
-- `POST /api/scenarios/run`: runs one selected synthetic sample through the existing simulated semantic-transmission / RIS-CNOMA / orchestrator path.
-
-Example generation request:
-
-```json
-{
-  "region_id": "region_001",
-  "scenario": "severe",
-  "rainfall_mm_h": 80,
-  "water_level_rise_m_h": 0.25,
-  "communication_condition": "partial",
-  "playback": "normal",
-  "seed": 2026,
-  "steps": 24,
-  "start_time": "2026-10-12T00:00:00+05:30",
-  "initial_water_level_m": 1.0
-}
-```
-
-The API returns each synthetic hourly sample, scenario configuration, a SHA-256 configuration hash, seed, scenario ID, and source provenance. The selected sample is translated into the existing channel simulator's environmental context. Partial and total outage settings only change the simulated node outage/recovery probabilities; they do not represent a real network.
-
-## Safety boundary
-
-- All generated rainfall, water levels, flow, debris, obstruction and node availability are synthetic.
-- Region selection supplies a label/location for the demonstration; it does not fetch region-specific flood observations or establish regional flood risk.
-- The generator never calls weather/gauge services and never edits historical records.
-- The flood assessment is hard-gated to `NOT_ASSESSED`, with no score. Synthetic scenarios cannot satisfy the official-threshold or fresh quality-controlled gauge requirements.
-- Radio behavior and orchestrator decisions remain software simulations. `NOT_ASSESSED` is neither a warning nor an all-clear. Use official local authorities for safety decisions.
-
-## Test
+Run the relevant tests locally:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_flood_scenario_generator.py tests/test_scenario_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_flood_scenario_generator.py tests/test_scenario_api.py tests/test_dashboard_api.py -q
 ```
+
+## Time selection and evidence
+
+The selected hour is used to choose an hourly Open-Meteo observation or forecast for the weather card. The UI labels the selected record as an observation or forecast. Flood assessment continues to use current inputs and stays `NOT_ASSESSED` until verified official station-specific thresholds and fresh quality-controlled gauge evidence are configured. A forecast, synthetic scenario, or simulated radio result must never be presented as an operational flood warning or an all-clear.
