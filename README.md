@@ -40,7 +40,7 @@ The rule-based `orchestrator_agent.py` selects a supported communication-control
 - `fixed_ris_cnoma_fallback`: when the best observed feasible SNR is below the configurable 3 dB rule threshold, selects among feasible CNOMA actions while holding RIS configuration zero.
 - `safe_wait`: uses the environment's wait action if the availability mask contains no feasible transmission action.
 
-The orchestrator records its reason, observed SNR summary, available-node count, chosen action and per-policy counts. The API returns this under `orchestrator`; CLI runs print the selected mode and each attempt's policy. These rules are a transparent baseline, not a trained meta-agent. The 3 dB threshold is a simulation policy setting, not a validated radio threshold. The fixed-RIS fallback is a supported CNOMA configuration, not an OMA implementation. All decisions and link outcomes remain simulation-only, and the flood assessment stays `NOT_ASSESSED` unless its existing evidence and official-threshold requirements are met.
+The internal pipeline records its reason, observed SNR summary, available-node count, chosen action and per-policy counts. CLI/research runs can inspect these values; the public dashboard API intentionally omits them. These rules are a transparent baseline, not a trained meta-agent. The 3 dB threshold is a simulation policy setting, not a validated radio threshold. The fixed-RIS fallback is a supported CNOMA configuration, not an OMA implementation. All decisions and link outcomes remain simulation-only, and the flood assessment stays `NOT_ASSESSED` unless its existing evidence and official-threshold requirements are met.
 
 Compare the DRL-only controller against the rule-based orchestrator on paired seeded light/moderate/severe channel scenarios with:
 
@@ -91,7 +91,7 @@ The channel simulator includes correlated fading, Rician components, rain attenu
 
 Run `python evaluate_access_modes.py --seeds 10 --steps 200 --output outputs/access_mode_ablation.csv` to compare OMA without RIS, CNOMA without RIS, and RIS-CNOMA on the same seeded synthetic channel scenarios. This is a controlled **perfect-current-CSI physical-layer ablation**: it helps isolate the access-mode/RIS effect but is not a DRL-policy comparison, and its selection strategy is explicitly labeled `perfect_current_CSI_oracle`. The CI workflow runs this ablation and uploads the CSV with the other research outputs. No result from this experiment is a field measurement.
 
-The API/dashboard exposes a separate **communication alert** with NORMAL, DEGRADED, CRITICAL or OUTAGE states. This must never be interpreted as a flood warning. Flood status remains conservatively gated by the existing official-threshold and QC rules.
+The internal communication pipeline computes a separate simulated link status. It is not used as a flood warning and is not returned by the user-facing dashboard API. Flood status remains conservatively gated by the existing official-threshold and QC rules.
 
 ### New research scenarios
 
@@ -113,8 +113,8 @@ docker compose up --build
 ```
 
 - Dashboard/API: http://localhost:8000
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000
+- Prometheus: http://localhost:9090 (bound to localhost for operator access)
+- Grafana: http://localhost:3000 (bound to localhost; Kubernetes anonymous access is disabled)
 
 ### Kubernetes
 
@@ -136,7 +136,7 @@ Start:
 .\.venv\Scripts\python.exe -m uvicorn api:app --reload
 ```
 
-Then open the local dashboard at the server root. `POST /api/run` accepts a region, communication-attempt count, seed and optional learning flag.
+Then open the local dashboard at the server root. The user-facing `POST /api/dashboard` accepts a region and selected local hour and returns only dashboard fields. The internal pipeline, synthetic scenario generator, semantic messages, orchestrator decisions, and simulated radio results are not included in that response. Interactive API documentation is disabled in the user-facing service.
 
 ## Limitations and future real-world work
 
@@ -159,6 +159,6 @@ Before treating a run as a reproducible project result:
 6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
 7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.
 
-## Interactive synthetic Scenario Lab
+## Internal synthetic scenario generator
 
-The dashboard includes a reproducible flood-scenario generator where presenters can select Kakinada, Vijayawada, or Machilipatnam, a scenario profile, illustrative rainfall and water-level rise, communication outage condition, simulation start time, duration, playback speed, and seed. It generates auditable hourly time series and can feed a selected sample through the simulated RIS-CNOMA/orchestrator pipeline. This mode is isolated from live weather and historical gauge inputs and always reports flood assessment as `NOT_ASSESSED`. See [`docs/SCENARIO_LAB.md`](docs/SCENARIO_LAB.md).
+The seeded synthetic scenario generator remains a developer/research component for reproducible tests. It is not part of the user-facing dashboard, its router is not mounted on the public API, and synthetic time series are not returned to the browser. The dashboard presents only region selection, selected-hour weather, conservative flood assessment, environmental indicators, and data/system alerts. See [`docs/SCENARIO_LAB.md`](docs/SCENARIO_LAB.md) for the internal boundary and tests.
