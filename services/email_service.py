@@ -6,8 +6,8 @@ from email.message import EmailMessage
 from urllib.parse import urlencode
 def _settings():
     host=os.getenv("FLOODAI_SMTP_HOST","smtp.gmail.com"); port=int(os.getenv("FLOODAI_SMTP_PORT","587"))
-    username=os.getenv("FLOODAI_SMTP_USER",""); password=os.getenv("FLOODAI_SMTP_APP_PASSWORD","")
-    sender=os.getenv("FLOODAI_EMAIL_FROM",username)
+    username=os.getenv("FLOODAI_SMTP_USER",""); password=os.getenv("FLOODAI_SMTP_APP_PASSWORD","").replace(" ","")
+    sender=os.getenv("FLOODAI_EMAIL_FROM") or username
     if not username or not password or not sender: raise RuntimeError("Email is not configured. Set FLOODAI_SMTP_USER and FLOODAI_SMTP_APP_PASSWORD.")
     return host,port,username,password,sender
 def send_email(recipient,subject,body):
