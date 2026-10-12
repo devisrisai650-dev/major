@@ -5,3 +5,6 @@ metadata:
   namespace: floodai
 data:
   FLOODAI_ENV: kubernetes
+  FLOODAI_AUTH_DB: /app/data/floodai_auth.sqlite3
+  FLOODAI_BASE_URL: http://localhost:8000
+  FLOODAI_COOKIE_SECURE: "false"
