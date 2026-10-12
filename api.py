@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,12 @@ from services.semantic_priority import (
 )
 from services.weather_service import get_weather_data
 from services.json_safe import to_json_safe
+from services.auth_api import router as auth_router
+from services.auth_service import get_user_from_request, init_db, require_user
+from services.alert_service import dispatch_verified_flood_alert
+from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+
+_alert_monitor_task = None
 
 def _flood_dashboard(analysis, water, weather, discharge):
     assessment = analysis["flood_assessment"]
@@ -123,6 +129,18 @@ app = FastAPI(
     openapi_url=None,
 )
 
+app.include_router(auth_router)
+
+@app.on_event("startup")
+async def initialize_auth_database():
+    global _alert_monitor_task
+    init_db()
+    _alert_monitor_task = start_alert_monitor()
+
+@app.on_event("shutdown")
+async def shutdown_alert_monitor():
+    await stop_alert_monitor(_alert_monitor_task)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -165,9 +183,27 @@ async def prometheus_middleware(request, call_next):
     return response
 
 
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return FileResponse(Path(__file__).resolve().parent / "web" / "login.html")
+
 @app.get("/", include_in_schema=False)
-def homepage():
+def homepage(request: Request):
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] == "admin":
+        return RedirectResponse("/admin", status_code=303)
     return FileResponse(Path(__file__).resolve().parent / "web" / "index.html")
+
+@app.get("/admin", include_in_schema=False)
+def admin_page(request: Request):
+    admin = get_user_from_request(request)
+    if not admin:
+        return RedirectResponse("/login", status_code=303)
+    if admin["role"] != "admin":
+        return RedirectResponse("/", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "admin.html")
 
 
 class RunRequest(BaseModel):
@@ -194,7 +230,7 @@ def regions():
 
 
 @app.get("/api/regions/{region_id}")
-def region_detail(region_id: str):
+def region_detail(region_id: str, user: dict[str, Any] = Depends(require_user)):
     try:
         region = get_region(region_id)
     except ValueError as exc:
@@ -335,9 +371,25 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
 
 
 @app.post("/api/dashboard")
-def dashboard(request: RunRequest) -> dict[str, Any]:
+def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
     """Return only user-facing dashboard fields; keep simulation internals server-side."""
     result = run_pipeline(request)
+    assessment_for_alert = result.get("flood_assessment", {})
+    evidence = {
+        "official_thresholds_verified": assessment_for_alert.get("official_thresholds_verified") is True,
+        "fresh_qc_gauge": assessment_for_alert.get("fresh_qc_gauge") is True,
+        "source_is_authoritative": assessment_for_alert.get("source_is_authoritative") is True,
+        "simulation_only": assessment_for_alert.get("simulation_only") is True,
+        "source_name": assessment_for_alert.get("source_name"),
+    }
+    # Email requires explicit verified-evidence flags and a stable upstream event ID.
+    # The current prototype does not meet that gate, so simulated signals send no alert.
+    dispatch_verified_flood_alert(
+        region_id=str(result.get("region", {}).get("id", request.region_id)),
+        region_name=str(result.get("region", {}).get("name", request.region_id)),
+        assessment=assessment_for_alert,
+        evidence=evidence,
+    )
     weather = result.get("weather", {})
     flood = result.get("flood_dashboard", {})
     indicators = result.get("flood_indicators", {})

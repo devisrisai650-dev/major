@@ -1,0 +1,96 @@
+from starlette.requests import Request
+
+import services.auth_service as auth_service
+import services.alert_service as alert_service
+
+
+def use_test_database(monkeypatch, tmp_path):
+    monkeypatch.setattr(auth_service, "DB_PATH", tmp_path / "auth.sqlite3")
+    monkeypatch.delenv("FLOODAI_ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("FLOODAI_ADMIN_PASSWORD", raising=False)
+    auth_service.init_db()
+
+
+def test_user_must_verify_email_before_login(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    user_id, token = auth_service.create_user("Test.User@gmail.com", "correct horse battery")
+    assert user_id > 0
+    assert auth_service.authenticate("test.user@gmail.com", "correct horse battery") is None
+    assert auth_service.verify_email_token(token) is True
+    user = auth_service.authenticate("test.user@gmail.com", "correct horse battery")
+    assert user is not None
+    assert user["role"] == "user"
+    assert user["is_verified"] is True
+    assert auth_service.authenticate("test.user@gmail.com", "wrong password") is None
+    assert auth_service.verify_email_token(token) is False
+
+
+def test_admin_is_bootstrapped_only_from_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(auth_service, "DB_PATH", tmp_path / "auth.sqlite3")
+    monkeypatch.setenv("FLOODAI_ADMIN_EMAIL", "platform.admin@gmail.com")
+    monkeypatch.setenv("FLOODAI_ADMIN_PASSWORD", "a-very-long-admin-secret-123")
+    auth_service.init_db()
+    admin = auth_service.authenticate("platform.admin@gmail.com", "a-very-long-admin-secret-123")
+    assert admin is not None
+    assert admin["role"] == "admin"
+    assert auth_service.create_user("another@gmail.com", "a-long-user-password")[0] > 0
+
+
+def test_session_cookie_resolves_server_side_user(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    user_id, verify_token = auth_service.create_user("session@gmail.com", "a-long-user-password")
+    assert user_id > 0
+    assert auth_service.verify_email_token(verify_token) is True
+    raw, _ = auth_service.create_session(user_id)
+    request = Request({
+        "type": "http", "method": "GET", "path": "/",
+        "headers": [(b"cookie", f"floodai_session={raw}".encode())],
+    })
+    assert auth_service.get_user_from_request(request)["email"] == "session@gmail.com"
+
+
+def test_alert_dispatch_requires_verified_official_evidence(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    sent = []
+    monkeypatch.setattr(alert_service, "send_flood_alert", lambda *args, **kwargs: sent.append(args))
+    result = alert_service.dispatch_verified_flood_alert(
+        region_id="region_001", region_name="Kakinada",
+        assessment={"status": "WARNING", "complete": True, "event_id": "event-1"},
+        evidence={"official_thresholds_verified": True, "fresh_qc_gauge": True,
+                  "source_is_authoritative": True, "simulation_only": True},
+    )
+    assert result["eligible"] is False
+    assert sent == []
+
+
+def test_verified_alert_sends_once_and_suppresses_duplicates(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    user_id, token = auth_service.create_user("alerts@gmail.com", "a-long-user-password")
+    assert user_id > 0
+    assert auth_service.verify_email_token(token)
+    sent = []
+    monkeypatch.setattr(alert_service, "send_flood_alert", lambda recipient, **kwargs: sent.append(recipient))
+    args = dict(
+        region_id="region_001", region_name="Kakinada",
+        assessment={"status": "WARNING", "complete": True, "event_id": "official-event-1",
+                    "observed_at": "2026-10-12T12:00:00+05:30", "message": "Official warning issued."},
+        evidence={"official_thresholds_verified": True, "fresh_qc_gauge": True,
+                  "source_is_authoritative": True, "simulation_only": False, "source_name": "Official authority"},
+    )
+    first = alert_service.dispatch_verified_flood_alert(**args)
+    second = alert_service.dispatch_verified_flood_alert(**args)
+    assert first["eligible"] is True
+    assert first["sent"] == 1
+    assert second["duplicate"] is True
+    assert sent == ["alerts@gmail.com"]
+
+
+def test_login_attempts_are_throttled_and_cleared_after_success(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    key = "test-login-attempt-key"
+    assert auth_service.login_is_locked(key) is False
+    for _ in range(5):
+        auth_service.record_login_failure(key)
+    assert auth_service.login_is_locked(key) is True
+    auth_service.clear_login_failures(key)
+    assert auth_service.login_is_locked(key) is False

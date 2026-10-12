@@ -162,3 +162,23 @@ Before treating a run as a reproducible project result:
 ## Internal synthetic scenario generator
 
 The seeded synthetic scenario generator remains a developer/research component for reproducible tests. It is not part of the user-facing dashboard, its router is not mounted on the public API, and synthetic time series are not returned to the browser. The dashboard presents only region selection, selected-hour weather, conservative flood assessment, environmental indicators, and data/system alerts. See [`docs/SCENARIO_LAB.md`](docs/SCENARIO_LAB.md) for the internal boundary and tests.
+
+
+## Authentication, platform admin, and Gmail alerts
+
+- Visit `/login` to register a regular user or sign in. Registration accepts an email address (Gmail works), requires a 10–128 character password, and requires email verification before login.
+- There is no public admin registration. Configure `FLOODAI_ADMIN_EMAIL` and `FLOODAI_ADMIN_PASSWORD` to provision the single platform admin; the admin password must be at least 14 characters.
+- The user dashboard is available only to an authenticated regular user. The admin dashboard at `/admin` and all `/api/admin/*` endpoints enforce the role on the server.
+- The admin can inspect account counts, registered users, audit activity, backend configuration status, and the full internal pipeline response. Research communication metrics are explicitly simulation-only.
+- User alert preferences default to enabled. Only verified, active users who have enabled email alerts are recipients. The app uses SMTP with a Google App Password; never use or commit your normal Gmail password.
+
+### Local Docker setup
+
+1. Copy `.env.example` to `.env`.
+2. Set a unique `FLOODAI_ADMIN_EMAIL` and strong `FLOODAI_ADMIN_PASSWORD`.
+3. Set `FLOODAI_SMTP_USER` to the sender Gmail and `FLOODAI_SMTP_APP_PASSWORD` to a Google App Password. Set `FLOODAI_EMAIL_FROM` to the sender address and `FLOODAI_BASE_URL` to the URL users will open.
+4. Run `docker compose up --build` and open `http://localhost:8000/login`.
+
+The SQLite database is persisted in a Docker named volume. The periodic alert monitor checks regions every five minutes when enabled. **It does not send an email for simulated or incomplete assessments.** The current prototype remains `NOT_ASSESSED` unless validated official thresholds and fresh QC-passed gauge evidence are configured. Automatic warning emails require a complete upstream assessment with explicit evidence flags and a stable event ID.
+
+For production, use HTTPS and set `FLOODAI_COOKIE_SECURE=true`, protect SMTP/admin secrets with a secrets manager, and migrate SQLite to PostgreSQL before running multiple API replicas.
