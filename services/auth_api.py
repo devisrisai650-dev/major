@@ -1,11 +1,12 @@
 """Authentication, account preferences, and platform-admin API routes."""
+# ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import os
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from services.auth_service import (SESSION_COOKIE,_connect,admin_snapshot,audit,authenticate,create_session,create_user,
- get_user_from_request,init_db,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email)
+ get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email)
 from services.email_service import send_verification_email
 router=APIRouter()
 class RegisterRequest(BaseModel):
@@ -25,19 +26,18 @@ class AdminPipelineRequest(BaseModel):
 
 @router.post("/api/auth/register",status_code=201)
 def register(payload:RegisterRequest,request:Request)->dict[str,Any]:
-    init_db(); uid,token=create_user(payload.email,payload.password); sent=False
+    uid,token=create_user(payload.email,payload.password); sent=False
     try: send_verification_email(validate_email(payload.email),token); sent=True
     except Exception: audit("verification_email_failed",target=str(uid),outcome="failure")
     audit("user_registered",target=str(uid),details=f"ip={request.client.host if request.client else 'unknown'}")
     return {"message":"Account created. Verify your email before signing in.","verification_required":True,"verification_email_sent":sent}
 @router.get("/api/auth/verify")
 def verify_email(token:str)->dict[str,str]:
-    init_db()
     if not verify_email_token(token): raise HTTPException(400,"Verification link is invalid or expired.")
     audit("email_verified"); return {"message":"Email verified. You can now sign in to FloodAI."}
 @router.post("/api/auth/login")
 def login(payload:LoginRequest,request:Request,response:Response)->dict[str,Any]:
-    init_db(); user=authenticate(payload.email,payload.password)
+    user=authenticate(payload.email,payload.password)
     if not user:
         audit("login_failed",target=payload.email.strip().lower(),outcome="failure")
         raise HTTPException(401,"Invalid credentials, unverified email, or inactive account.")
@@ -70,7 +70,6 @@ def admin_update_user(user_id:int,payload:UserStatusUpdate,admin:dict[str,Any]=D
     return {"user_id":user_id,"active":payload.active}
 @router.get("/api/admin/backend")
 def admin_backend(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
-    init_db()
     with _connect() as db:
         verified=int(db.execute("SELECT COUNT(*) FROM users WHERE is_verified=1").fetchone()[0])
         unverified=int(db.execute("SELECT COUNT(*) FROM users WHERE is_verified=0").fetchone()[0])
