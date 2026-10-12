@@ -1,4 +1,9 @@
-"""Paired simulation comparison: DRL-only versus rule-based orchestration."""
+"""Paired DRL-only versus rule-based orchestration stress evaluation.
+
+Every row is one simulated critical-message delivery episode. Controllers use
+matched seeds within each scenario/message. This tests whether fallback/wait
+paths actually activate under stress; it does not imply field performance.
+"""
 from __future__ import annotations
 
 import argparse
@@ -30,18 +35,36 @@ SCENARIOS = {
         "node_recovery_probability": 0.25,
     },
     "severe": {
-        "rain_mm": 35.0,
-        "flow_velocity_mps": 1.6,
-        "water_depth_m": 1.6,
-        "debris_density": 0.8,
-        "los_obstruction": 0.8,
+        "rain_mm": 60.0,
+        "flow_velocity_mps": 1.8,
+        "water_depth_m": 1.8,
+        "debris_density": 0.9,
+        "los_obstruction": 0.9,
         "node_outage_probability": 0.12,
         "node_recovery_probability": 0.15,
+    },
+    "outage_stress": {
+        "rain_mm": 80.0,
+        "flow_velocity_mps": 2.0,
+        "water_depth_m": 2.0,
+        "debris_density": 1.0,
+        "los_obstruction": 1.0,
+        "node_outage_probability": 0.45,
+        "node_recovery_probability": 0.05,
     },
 }
 
 
-def run_episode(policy_path: Path, seed: int, steps: int, scenario: str, controller: str):
+def run_episode(
+    policy_path: Path,
+    seed: int,
+    steps: int,
+    scenario: str,
+    controller: str,
+    message_index: int = 0,
+) -> dict:
+    if controller not in {"drl_only", "orchestrated"}:
+        raise ValueError(f"Unknown controller: {controller}")
     agent = QLearningRISAgent(seed=seed)
     agent.load(policy_path)
     agent.epsilon = 0.0
@@ -85,6 +108,7 @@ def run_episode(policy_path: Path, seed: int, steps: int, scenario: str, control
         "scenario": scenario,
         "controller": controller,
         "seed": seed,
+        "message_index": message_index,
         "priority": "CRITICAL",
         "delivered": int(delivered),
         "steps_used": len(policies),
@@ -93,6 +117,8 @@ def run_episode(policy_path: Path, seed: int, steps: int, scenario: str, control
         "drl_decisions": policies.count("drl_ris_cnoma"),
         "fallback_decisions": policies.count("fixed_ris_cnoma_fallback"),
         "safe_wait_decisions": policies.count("safe_wait"),
+        "fallback_activated": int("fixed_ris_cnoma_fallback" in policies),
+        "safe_wait_activated": int("safe_wait" in policies),
         "steps_with_outage": outage_steps,
         "simulation_only": True,
     }
@@ -103,12 +129,13 @@ def main():
         description="Paired DRL-only versus orchestrated software simulation"
     )
     parser.add_argument("--policy", default="models/ris_q_table.npz")
-    parser.add_argument("--seeds", type=int, default=5)
-    parser.add_argument("--steps", type=int, default=40)
+    parser.add_argument("--seeds", type=int, default=5, help="Independent seed groups")
+    parser.add_argument("--messages", type=int, default=20, help="Messages per seed/scenario")
+    parser.add_argument("--steps", type=int, default=40, help="Maximum attempts per message")
     parser.add_argument("--output", default="outputs/orchestrator_comparison.csv")
     args = parser.parse_args()
-    if args.seeds < 1 or args.steps < 1:
-        parser.error("--seeds and --steps must be positive")
+    if args.seeds < 1 or args.messages < 1 or args.steps < 1:
+        parser.error("--seeds, --messages and --steps must be positive")
     policy_path = Path(args.policy)
     if not policy_path.exists():
         parser.error(
@@ -116,13 +143,15 @@ def main():
         )
 
     rows = []
-    for scenario in SCENARIOS:
-        for index in range(args.seeds):
-            seed = 30000 + index
-            for controller in ("drl_only", "orchestrated"):
-                rows.append(
-                    run_episode(policy_path, seed, args.steps, scenario, controller)
-                )
+    for scenario_index, scenario in enumerate(SCENARIOS):
+        for seed_group in range(args.seeds):
+            for message_index in range(args.messages):
+                # Both controllers receive exactly the same environment seed.
+                seed = 30000 + scenario_index * 100000 + seed_group * args.messages + message_index
+                for controller in ("drl_only", "orchestrated"):
+                    rows.append(run_episode(
+                        policy_path, seed, args.steps, scenario, controller, message_index
+                    ))
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +160,7 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    print("SIMULATION-ONLY ORCHESTRATOR COMPARISON")
+    print("SIMULATION-ONLY ORCHESTRATOR STRESS COMPARISON")
     print(f"Rows: {len(rows)}")
     print(f"Output: {output}")
     for scenario in SCENARIOS:
@@ -141,11 +170,15 @@ def main():
                 if row["scenario"] == scenario and row["controller"] == controller
             ]
             delivery = sum(row["delivered"] for row in selected) / len(selected)
+            fallback_rate = sum(row["fallback_activated"] for row in selected) / len(selected)
+            wait_rate = sum(row["safe_wait_activated"] for row in selected) / len(selected)
             print(
-                f"{scenario:>8} | {controller:>12} | "
-                f"critical delivery={delivery:.3f} | n={len(selected)}"
+                f"{scenario:>13} | {controller:>12} | "
+                f"critical delivery={delivery:.3f} | "
+                f"fallback-active={fallback_rate:.3f} | safe-wait-active={wait_rate:.3f} | "
+                f"n={len(selected)}"
             )
-    print("These are software simulation results, not field measurements.")
+    print("Review fallback activation and paired delivery differences; do not infer field performance.")
 
 
 if __name__ == "__main__":

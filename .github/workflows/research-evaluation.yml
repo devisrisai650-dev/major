@@ -83,7 +83,7 @@ jobs:
             --steps "$STEPS" \
             --output-dir outputs
       - name: Evaluate DRL-only versus orchestrated policies
-        run: python evaluate_orchestrator.py --seeds 5 --steps 40 --output outputs/orchestrator_comparison.csv
+        run: python evaluate_orchestrator.py --seeds 5 --messages 20 --steps 40 --output outputs/orchestrator_comparison.csv
       - name: Run controlled OMA/CNOMA/RIS-CNOMA ablation
         run: python evaluate_access_modes.py --seeds 10 --steps 200 --output outputs/access_mode_ablation.csv
       - name: Generate plots
