@@ -95,6 +95,46 @@ def _communication_kpis(transmission):
     }
 
 
+def _classify_demo_flood_scenario(rain_mm, rain_6h_mm, rise_m_per_hour, discharge_m3s):
+    """Classify synthetic demo inputs for UI demonstration only; never an official warning."""
+    values = (rain_mm, rain_6h_mm, rise_m_per_hour, discharge_m3s)
+    if any(value is None for value in values):
+        return {
+            "status": "DEMO_DATA_INCOMPLETE",
+            "signal": "INCOMPLETE",
+            "label": "Synthetic demo data incomplete",
+        }
+
+    # Transparent demonstration bands, deliberately separate from official thresholds.
+    if (
+        rain_mm >= 50
+        or rain_6h_mm >= 250
+        or rise_m_per_hour >= 0.20
+        or discharge_m3s >= 150
+    ):
+        return {
+            "status": "DEMO_HIGH",
+            "signal": "HIGH",
+            "label": "High synthetic flood scenario",
+        }
+    if (
+        rain_mm >= 10
+        or rain_6h_mm >= 50
+        or rise_m_per_hour >= 0.10
+        or discharge_m3s >= 100
+    ):
+        return {
+            "status": "DEMO_ELEVATED",
+            "signal": "ELEVATED",
+            "label": "Elevated synthetic flood scenario",
+        }
+    return {
+        "status": "DEMO_BASELINE",
+        "signal": "LOW",
+        "label": "Baseline synthetic scenario",
+    }
+
+
 def _communication_alert(transmission):
     attempts = transmission.get("attempts", [])
     successful = [item for item in attempts if item.get("delivered")]
@@ -475,17 +515,28 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "station": "SYNTHETIC_DEMO", "observation_time": request.time_of_day,
             "age_hours": 0.0, "reason": "Synthetic demonstration value; not an official gauge reading.",
         }
+        demo_classification = _classify_demo_flood_scenario(
+            rain_mm, rain6, rise, demo_discharge
+        )
         analysis["flood_assessment"] = {
-            "status": "DEMO_FLOOD_SCENARIO", "state": "DEMO_FLOOD_SCENARIO",
-            "score": None, "complete": False,
-            "reason": "SIMULATED FLOOD DEMONSTRATION ONLY. Synthetic data is not a real flood warning or an all-clear.",
-            "missing_or_unconfigured": ["synthetic demonstration; official thresholds and live QC gauge evidence are not applied"],
+            "status": demo_classification["status"],
+            "state": demo_classification["status"],
+            "score": None,
+            "complete": False,
+            "reason": (
+                f"SIMULATION ONLY: {demo_classification['label']}. "
+                "Synthetic values and demonstration bands are not official thresholds, "
+                "a real flood warning, or an all-clear."
+            ),
+            "missing_or_unconfigured": [
+                "synthetic demonstration; official thresholds and live QC gauge evidence are not applied"
+            ],
         }
     flood = _flood_dashboard(analysis, water, weather, discharge)
     if scenario is not None:
-        flood["assessment_status"] = "DEMO_FLOOD_SCENARIO"
-        flood["environmental_signal"] = "HIGH" if scenario["communication_status"] == "PARTIAL_OUTAGE" else "ELEVATED" if scenario["communication_status"] == "DEGRADED" else "LOW"
-        flood["message"] = "SIMULATED FLOOD DEMONSTRATION ONLY — synthetic rainfall and gauge values are not real-world warnings."
+        flood["assessment_status"] = analysis["flood_assessment"]["status"]
+        flood["environmental_signal"] = demo_classification["signal"]
+        flood["message"] = analysis["flood_assessment"]["reason"]
         flood["readiness"]["assessment_ready"] = False
     indicators = {
         "rainfall": analysis.get("rainfall", {}),
