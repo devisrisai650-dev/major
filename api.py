@@ -413,7 +413,7 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     if request.scenario_mode == "demo":
         # Clearly labelled synthetic scenario: demonstration data must never be
         # presented as an official warning or mixed silently with live gauge data.
-        scenario_path = Path(__file__).resolve().parent / "data" / "demo_flood_scenarios.csv"
+        scenario_path = Path(__file__).resolve().parent / "config" / "demo_flood_scenarios.csv"
         try:
             with scenario_path.open(newline="", encoding="utf-8") as handle:
                 scenario = next(
