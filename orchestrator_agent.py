@@ -61,12 +61,29 @@ def select_policy(
         }
 
     if best_snr is not None and best_snr < degraded_snr_db:
-        policy = "fixed_ris_cnoma_fallback"
-        reason = (
-            f"Best observed feasible SNR ({best_snr:.2f} dB) is below the "
-            f"degraded-link threshold ({degraded_snr_db:.2f} dB); use the "
-            "deterministic CNOMA fallback with RIS configuration zero."
+        availability = observation.get("available", [])
+        n_channels = len(availability)
+        n_ris_configs = len(availability[0]) if n_channels else 0
+        fixed_ris_feasible = any(
+            mask[power * n_channels * n_ris_configs + channel * n_ris_configs]
+            for power in range(3)
+            for channel in range(n_channels)
+            if power * n_channels * n_ris_configs + channel * n_ris_configs < len(mask) - 1
         )
+        if fixed_ris_feasible:
+            policy = "fixed_ris_cnoma_fallback"
+            reason = (
+                f"Best observed feasible SNR ({best_snr:.2f} dB) is below the "
+                f"degraded-link threshold ({degraded_snr_db:.2f} dB); use the "
+                "deterministic CNOMA fallback with RIS configuration zero."
+            )
+        else:
+            policy = "drl_ris_cnoma"
+            reason = (
+                "The link is degraded but no fixed-RIS action is feasible; "
+                "delegate to the trained DRL policy rather than selecting an "
+                "infeasible fallback."
+            )
     else:
         policy = "drl_ris_cnoma"
         reason = (
