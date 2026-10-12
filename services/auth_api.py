@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from services.auth_service import (SESSION_COOKIE,_connect,admin_snapshot,audit,authenticate,create_session,create_user,
- get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures)
+ get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures,email_verification_required)
 from services.email_service import send_verification_email
 router=APIRouter()
 class RegisterRequest(BaseModel):
@@ -27,11 +27,15 @@ class AdminPipelineRequest(BaseModel):
 
 @router.post("/api/auth/register",status_code=201)
 def register(payload:RegisterRequest,request:Request)->dict[str,Any]:
-    uid,token=create_user(payload.email,payload.password); sent=False
-    try: send_verification_email(validate_email(payload.email),token); sent=True
-    except Exception: audit("verification_email_failed",target=str(uid),outcome="failure")
+    uid,token=create_user(payload.email,payload.password)
+    verification_required=email_verification_required()
+    sent=False
+    if verification_required:
+        try: send_verification_email(validate_email(payload.email),token); sent=True
+        except Exception: audit("verification_email_failed",target=str(uid),outcome="failure")
     audit("user_registered",target=str(uid),details=f"ip={request.client.host if request.client else 'unknown'}")
-    return {"message":"Account created. Verify your email before signing in.","verification_required":True,"verification_email_sent":sent}
+    message="Account created. You can sign in now." if not verification_required else "Account created. Verify your email before signing in."
+    return {"message":message,"verification_required":verification_required,"verification_email_sent":sent}
 @router.get("/api/auth/verify")
 def verify_email(token:str)->dict[str,str]:
     if not verify_email_token(token): raise HTTPException(400,"Verification link is invalid or expired.")
