@@ -64,3 +64,11 @@ def test_orchestrator_summary_reports_policy_counts():
         "fixed_ris_cnoma_fallback": 1,
     }
     assert result["decision_count"] == 3
+
+
+def test_degraded_link_does_not_choose_infeasible_fixed_ris_fallback():
+    obs = observation([[1.0, 2.0], [0.0, 1.0]], [[False, True], [False, True]])
+    mask = [False, True, False, True, False, True, False, True, False, True, False, True, False]
+    result = select_policy(obs, mask, "HIGH")
+    assert result["policy"] == "drl_ris_cnoma"
+    assert "no fixed-RIS action is feasible" in result["reason"]
