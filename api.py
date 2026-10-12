@@ -431,6 +431,11 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         demo_discharge = float(scenario["river_discharge_m3s"])
         weather["source"] = "Open-Meteo weather + synthetic flood demo rainfall"
         weather.setdefault("current", {})["rain_mm"] = rain
+        if weather.get("selected_hour") is not None:
+            weather["selected_hour"] = dict(weather["selected_hour"])
+            weather["selected_hour"]["rain_mm"] = rain
+            weather["selected_hour"]["precipitation_mm"] = rain
+            weather["selected_hour"]["source_type"] = "synthetic_demo"
         weather["rainfall_windows"] = {
             "last_1h_precipitation_mm": rain,
             "last_3h_precipitation_mm": rain * 3,
@@ -445,6 +450,11 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "last_6h_precipitation_mm": rain6,
             "last_24h_precipitation_mm": rain24,
             "source": "synthetic demonstration dataset",
+        }
+        discharge = {
+            "discharge_m3s": demo_discharge, "available": True,
+            "time": request.time_of_day, "data_type": "synthetic_demo",
+            "reason": "Synthetic demonstration value; not a live gauge measurement.",
         }
         analysis["river"] = {
             "discharge_m3s": demo_discharge, "available": True,
