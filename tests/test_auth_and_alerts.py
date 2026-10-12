@@ -11,18 +11,28 @@ def use_test_database(monkeypatch, tmp_path):
     auth_service.init_db()
 
 
-def test_user_must_verify_email_before_login(monkeypatch, tmp_path):
+def test_email_verification_can_be_disabled_for_prototype(monkeypatch, tmp_path):
     use_test_database(monkeypatch, tmp_path)
+    monkeypatch.setenv("FLOODAI_EMAIL_VERIFICATION_REQUIRED", "false")
     user_id, token = auth_service.create_user("Test.User@gmail.com", "correct horse battery")
     assert user_id > 0
-    assert auth_service.authenticate("test.user@gmail.com", "correct horse battery") is None
-    assert auth_service.verify_email_token(token) is True
+    assert token == ""
     user = auth_service.authenticate("test.user@gmail.com", "correct horse battery")
     assert user is not None
     assert user["role"] == "user"
     assert user["is_verified"] is True
     assert auth_service.authenticate("test.user@gmail.com", "wrong password") is None
-    assert auth_service.verify_email_token(token) is False
+
+
+def test_email_verification_can_be_required(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    monkeypatch.setenv("FLOODAI_EMAIL_VERIFICATION_REQUIRED", "true")
+    user_id, token = auth_service.create_user("verified-later@gmail.com", "correct horse battery")
+    assert user_id > 0
+    assert token
+    assert auth_service.authenticate("verified-later@gmail.com", "correct horse battery") is None
+    assert auth_service.verify_email_token(token) is True
+    assert auth_service.authenticate("verified-later@gmail.com", "correct horse battery") is not None
 
 
 def test_admin_is_bootstrapped_only_from_environment(monkeypatch, tmp_path):
