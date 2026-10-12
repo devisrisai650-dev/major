@@ -44,7 +44,6 @@ def _flood_dashboard(analysis, water, weather, discharge):
     ]
     severe = {"VERY_HIGH", "VERY_RAPIDLY_RISING"}
     elevated = {"HIGH", "RAPIDLY_RISING", "MODERATE"}
-    signal = "HIGH" if any(x in severe for x in classifications) else "ELEVATED" if any(x in elevated for x in classifications) else "LOW"
     readiness = {
         "thresholds_verified": not any("verified official" in item for item in missing),
         "fresh_qc_gauge": bool(gauge.get("available") and gauge.get("is_recent")),
@@ -52,6 +51,16 @@ def _flood_dashboard(analysis, water, weather, discharge):
         "complete_6h_rainfall_available": rainfall.get("last_6h_precipitation_mm") is not None,
         "assessment_ready": bool(assessment.get("complete")),
     }
+    # Never summarize incomplete evidence as a LOW flood signal. Indicators are
+    # descriptive only until official thresholds and fresh QC gauge evidence exist.
+    if not readiness["assessment_ready"]:
+        signal = "INCOMPLETE"
+    elif any(x in severe for x in classifications):
+        signal = "HIGH"
+    elif any(x in elevated for x in classifications):
+        signal = "ELEVATED"
+    else:
+        signal = "LOW"
     return {
         "assessment_status": assessment.get("status", "NOT_ASSESSED"),
         "assessment_state": assessment.get("state", "NOT_ASSESSED"),
