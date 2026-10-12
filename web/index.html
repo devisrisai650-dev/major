@@ -57,7 +57,8 @@ set("water-level",water.available===false?"No fresh gauge reading":fmt(pick(wate
 const station=pick(data,["water_level.station"]);const gaugeTime=pick(data,["water_level.current_time"]);set("gauge-source",(station||gaugeTime)?[station,gaugeTime].filter(Boolean).join(" · "):"Station / timestamp unavailable");
 set("discharge",discharge.available===false?"Unavailable":fmt(pick(discharge,["discharge_m3s","value_m3_s"])," m³/s",2));
 const signal=fd.environmental_signal;const missing=fd.readiness&&!fd.readiness.assessment_ready;
-if(signal==="HIGH"||signal==="ELEVATED"){setStatus("alert-state","ENVIRONMENTAL SIGNAL: "+signal,"unknown");set("alert-message","Some environmental indicators are elevated. This is an indicator, not an official flood warning.");}
+if(data.scenario_mode==="demo"){setStatus("alert-state","SIMULATED FLOOD SCENARIO: "+(signal||"ELEVATED"),"bad");set("alert-message","DEMO ONLY: the selected synthetic dataset represents a flood scenario and partial communications outage. This is not a real flood warning; live official risk remains NOT_ASSESSED.");}
+else if(signal==="HIGH"||signal==="ELEVATED"){setStatus("alert-state","ENVIRONMENTAL SIGNAL: "+signal,"unknown");set("alert-message","Some environmental indicators are elevated. This is an indicator, not an official flood warning.");}
 else if(signal==="INCOMPLETE"||missing){setStatus("alert-state","DATA INCOMPLETE","unknown");set("alert-message","Flood assessment is unavailable because one or more required verified data sources or thresholds are missing. LOW indicator values must not be interpreted as low flood risk.");}
 else{setStatus("alert-state","NO ELEVATED INDICATOR","info");set("alert-message","No elevated environmental indicator was reported by the current assessment. This is not an all-clear.");}
 }
