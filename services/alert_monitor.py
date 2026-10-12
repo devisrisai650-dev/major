@@ -9,7 +9,7 @@ from services.alert_service import dispatch_verified_flood_alert
 from services.flood_api import get_discharge_analysis
 from services.flood_state import analyze_flood_state
 from services.gauge_provider import CsvReplayProvider
-from services.region_manager import get_region, load_regions
+from services.region_manager import load_regions
 from services.weather_service import get_weather_data
 
 logger=logging.getLogger(__name__)
