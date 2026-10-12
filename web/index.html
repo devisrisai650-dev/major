@@ -57,6 +57,34 @@ table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;p
 <p class="note">Important: NOT ASSESSED is the correct flood-assessment state when verified official station-specific thresholds and fresh QC-passed gauge evidence are unavailable. Environmental indicator classes are descriptive, not official warnings. RIS, CNOMA, SNR, SINR, SIC, latency, AoI, outages and packet outcomes are software simulations.</p>
 </section>
 </main>
+
+<section id="scenario-lab" style="margin-top:26px;border:1px solid var(--line);border-radius:15px;padding:18px;background:linear-gradient(145deg,var(--panel),#0b1b23)">
+  <div class="eyebrow">Demonstration mode · synthetic data only</div>
+  <h2 style="font-size:22px">FloodAI Scenario Lab</h2>
+  <p class="subtitle" style="font-size:12px;max-width:900px">Create a reproducible flood timeline for any configured region and chosen start time. This never changes the live/historical pipeline and cannot issue a real flood warning.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0">
+    <div><label for="sl-region">Region</label><select id="sl-region" style="width:100%"></select></div>
+    <div><label for="sl-scenario">Flood profile</label><select id="sl-scenario" style="width:100%"><option value="normal">Normal baseline</option><option value="rising">Rising water</option><option value="severe" selected>Severe flood</option><option value="emergency">Critical emergency</option><option value="recovery">Recovery</option></select></div>
+    <div><label for="sl-rain">Illustrative rainfall (mm/h)</label><input id="sl-rain" type="number" min="0" max="300" step="1" value="80" style="width:100%;padding:9px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px"></div>
+    <div><label for="sl-rise">Illustrative water rise (m/h)</label><input id="sl-rise" type="number" min="0" max="1" step="0.01" value="0.25" style="width:100%;padding:9px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px"></div>
+    <div><label for="sl-comm">Communication condition</label><select id="sl-comm" style="width:100%"><option value="healthy">Healthy</option><option value="partial" selected>Partial outage</option><option value="total">Total outage stress</option></select></div>
+    <div><label for="sl-playback">Playback speed</label><select id="sl-playback" style="width:100%"><option value="normal" selected>Normal (1 step/s)</option><option value="fast">Fast (4 steps/s)</option></select></div>
+    <div><label for="sl-start">Simulation start time</label><input id="sl-start" type="datetime-local" style="width:100%;padding:9px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px"></div>
+    <div><label for="sl-duration">Duration (hours)</label><input id="sl-duration" type="number" min="2" max="168" value="24" step="1" style="width:100%;padding:9px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px"></div>
+    <div><label for="sl-seed">Reproducibility seed</label><input id="sl-seed" type="number" value="2026" step="1" style="width:100%;padding:9px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px"></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button id="sl-generate">Generate timeline</button><button id="sl-play" class="secondary" disabled>▶ Play</button><button id="sl-prev" class="secondary" disabled>← Previous</button><button id="sl-next" class="secondary" disabled>Next →</button><button id="sl-run" class="secondary" disabled>Run selected step through orchestrator</button><span id="sl-status" class="subtitle">Choose settings and generate a timeline.</span></div>
+  <div style="margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:12px;background:rgba(255,255,255,.02)">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b id="sl-step-title">No scenario generated</b><span class="state warn">FLOOD ASSESSMENT: NOT_ASSESSED</span></div>
+    <input id="sl-seek" type="range" min="0" max="23" value="0" disabled style="width:100%;margin:14px 0">
+    <div id="sl-metrics" class="metrics"><div class="metric"><span>Rainfall</span><b>—</b></div><div class="metric"><span>Water level</span><b>—</b></div><div class="metric"><span>Scenario phase</span><b>—</b></div></div>
+    <p id="sl-safety" class="subtitle" style="margin-top:12px">Synthetic values are illustrative only—not measurements, a forecast, warning, or all-clear.</p>
+    <details style="margin-top:10px"><summary>Scenario provenance</summary><pre id="sl-provenance" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:11px">Generate a timeline to see seed, configuration hash and data source.</pre></details>
+    <div style="overflow:auto;margin-top:12px;max-height:300px"><table id="sl-series-table"><thead><tr><th>Time step</th><th>Rain (mm/h)</th><th>Water level (m)</th><th>Rise (m/h)</th><th>Phase</th><th>Node</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <pre id="sl-run-output" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;color:var(--muted);font-size:11px"></pre>
+</section>
+
 <script>
 const $=id=>document.getElementById(id),api=location.origin;let last=null;
 const set=(id,v,f="UNAVAILABLE")=>$(id).textContent=(v===null||v===undefined||v==="")?f:String(v);
