@@ -27,7 +27,6 @@ from services.weather_service import get_weather_data
 from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
-from services.alert_service import dispatch_verified_flood_alert
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
 
 _alert_monitor_task = None
