@@ -158,3 +158,7 @@ Before treating a run as a reproducible project result:
 5. Generate plots only from the CSV outputs.
 6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
 7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.
+
+## Interactive synthetic Scenario Lab
+
+The dashboard includes a reproducible flood-scenario generator where presenters can select Kakinada, Vijayawada, or Machilipatnam, a scenario profile, illustrative rainfall and water-level rise, communication outage condition, simulation start time, duration, playback speed, and seed. It generates auditable hourly time series and can feed a selected sample through the simulated RIS-CNOMA/orchestrator pipeline. This mode is isolated from live weather and historical gauge inputs and always reports flood assessment as `NOT_ASSESSED`. See [`docs/SCENARIO_LAB.md`](docs/SCENARIO_LAB.md).
