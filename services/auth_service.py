@@ -9,6 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 DB_PATH=Path(os.getenv("FLOODAI_AUTH_DB",str(ROOT/"data"/"floodai_auth.sqlite3")))
 SESSION_COOKIE="floodai_session"; SESSION_HOURS=int(os.getenv("FLOODAI_SESSION_HOURS","12")); PBKDF2_ROUNDS=310_000
 EMAIL_RE=re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+def email_verification_required(): return os.getenv("FLOODAI_EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
 def now_utc(): return datetime.now(timezone.utc)
 def iso(dt=None): return (dt or now_utc()).isoformat()
 def _connect():
@@ -32,6 +33,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
         """)
+    if not email_verification_required():
+        with _connect() as db:
+            db.execute("UPDATE users SET is_verified=1, verification_token_hash=NULL, verification_expires_at=NULL WHERE role='user' AND is_verified=0")
     _bootstrap_admin()
 def _password_hash(password,salt=None):
     salt=salt or secrets.token_bytes(16); digest=hashlib.pbkdf2_hmac("sha256",password.encode(),salt,PBKDF2_ROUNDS)
@@ -66,12 +70,16 @@ def _bootstrap_admin():
                 raise RuntimeError("FloodAI permits one platform admin; configured email does not match the provisioned admin.")
             db.execute("INSERT INTO users(email,password_hash,role,is_verified,is_active,alerts_enabled,created_at) VALUES(?,?,'admin',1,1,0,?)",(email,_password_hash(password),iso()))
 def create_user(email,password):
-    email=validate_email(email); validate_password(password); token=secrets.token_urlsafe(32)
-    expiry=iso(now_utc()+timedelta(hours=24)); hashed=hashlib.sha256(token.encode()).hexdigest()
+    email=validate_email(email); validate_password(password)
+    verification_required=email_verification_required()
+    token=secrets.token_urlsafe(32) if verification_required else ""
+    expiry=iso(now_utc()+timedelta(hours=24)) if verification_required else None
+    hashed=hashlib.sha256(token.encode()).hexdigest() if verification_required else None
+    verified=0 if verification_required else 1
     try:
         with _connect() as db:
             cur=db.execute("""INSERT INTO users(email,password_hash,role,is_verified,is_active,alerts_enabled,created_at,verification_token_hash,verification_expires_at)
-            VALUES(?,?,'user',0,1,1,?,?,?)""",(email,_password_hash(password),iso(),hashed,expiry)); uid=int(cur.lastrowid)
+            VALUES(?,?,'user',?,1,1,?,?,?)""",(email,_password_hash(password),verified,iso(),hashed,expiry)); uid=int(cur.lastrowid)
     except sqlite3.IntegrityError as exc: raise HTTPException(409,"An account with this email already exists.") from exc
     return uid,token
 def verify_email_token(token):
