@@ -104,6 +104,9 @@ def run(region, communication_attempts=5, seed=2026, learn=False):
         learn=learn,
     )
     print(f"Message priority: {result['priority']}")
+    orchestration = result.get("orchestrator", {})
+    print(f"Orchestrator mode: {orchestration.get('policy', 'unavailable')}")
+    print(f"Policy selections: {orchestration.get('policy_counts', {})}")
     for item in result["attempts"]:
         if item["waited"]:
             print(
@@ -116,7 +119,8 @@ def run(region, communication_attempts=5, seed=2026, learn=False):
                 f"RIS config {item['ris_configuration']} | "
                 f"{item['channel_condition']} | SNR {item['snr_db']:.2f} dB | "
                 f"latency {item['latency_ms']:.1f} ms | "
-                f"{'DELIVERED' if item['delivered'] else 'NOT DELIVERED'}"
+                f"{'DELIVERED' if item['delivered'] else 'NOT DELIVERED'} | "
+                f"orchestrator={item.get('orchestrator_policy', 'unknown')}"
             )
     if result["delivered"]:
         print("Receiver: packet decoded and semantic message received:")
