@@ -173,6 +173,7 @@ class RunRequest(BaseModel):
     region_id: str = Field(min_length=1)
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
+    time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\\d|2[0-3]):00$")
     learn: bool = False
 
 
@@ -218,6 +219,22 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
         PIPELINE_ERRORS.labels("weather").inc()
         raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+
+    # Select the requested local hour for the weather card. Flood assessment still
+    # uses current observations and the verified-data gate; a forecast is not
+    # silently treated as a current gauge reading.
+    hourly_conditions = weather.get("hourly_conditions", [])
+    current_stamp = weather.get("current", {}).get("time")
+    if current_stamp and hourly_conditions:
+        selected_stamp = f"{current_stamp[:10]}T{request.time_of_day}"
+        selected = next(
+            (row for row in hourly_conditions if row.get("time") == selected_stamp),
+            None,
+        )
+        if selected is not None:
+            weather["selected_hour"] = selected
+        else:
+            weather["selected_hour"] = None
 
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
     water = CsvReplayProvider().get_water_level(region)
