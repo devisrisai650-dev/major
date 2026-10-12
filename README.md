@@ -45,10 +45,10 @@ The orchestrator records its reason, observed SNR summary, available-node count,
 Compare the DRL-only controller against the rule-based orchestrator on paired seeded light/moderate/severe channel scenarios with:
 
 ```powershell
-.\\.venv\\Scripts\\python.exe evaluate_orchestrator.py --seeds 5 --steps 40 --output outputs/orchestrator_comparison.csv
+.\\.venv\\Scripts\\python.exe evaluate_orchestrator.py --seeds 5 --messages 20 --steps 40 --output outputs/orchestrator_comparison.csv
 ```
 
-The CSV reports delivery, latency, policy-selection counts and outage exposure for each paired run. Compare the generated results; do not assume orchestration improves delivery before the evaluation is run.
+The CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The experiment includes an explicit outage-stress scenario and reports whether fallback/safe-wait actually activate. A short comparison in which both controllers only use the DRL policy is inconclusive; do not assume orchestration improves delivery before the paired results are reviewed.
 
 Run the orchestrator tests with:
 
