@@ -13,7 +13,7 @@ FloodAI is a reproducible research prototype that combines regional environmenta
 
 ## Architecture
 
-`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> XGBoost K prediction -> physics-informed channel -> RIS + CNOMA + SIC -> Q-learning controller -> delivery/AoI -> API/dashboard -> Docker/Kubernetes -> Prometheus/Grafana`
+`weather/hydrology/gauge replay -> QC -> conservative assessment -> semantic priority -> rule-based orchestrator -> DRL RIS-CNOMA OR fixed-RIS CNOMA fallback OR safe wait -> simulated delivery/AoI -> API -> Docker/Kubernetes -> Prometheus/Grafana`
 
 ## Reproducible run order
 
@@ -31,6 +31,22 @@ Use the project virtual environment on Windows:
 ```
 
 The default RIS inference path does not update the Q-table. Learning is opt-in through the `learn` flag.
+
+## Policy orchestrator
+
+The rule-based `orchestrator_agent.py` selects a supported communication-control path at every simulated transmission attempt:
+
+- `drl_ris_cnoma`: delegates RIS/resource selection to the trained Q-learning policy when the observed feasible link is not classified as degraded.
+- `fixed_ris_cnoma_fallback`: when the best observed feasible SNR is below the configurable 3 dB rule threshold, selects among feasible CNOMA actions while holding RIS configuration zero.
+- `safe_wait`: uses the environment's wait action if the availability mask contains no feasible transmission action.
+
+The orchestrator records its reason, observed SNR summary, available-node count, chosen action and per-policy counts. The API returns this under `orchestrator`; CLI runs print the selected mode and each attempt's policy. These rules are a transparent baseline, not a trained meta-agent. The 3 dB threshold is a simulation policy setting, not a validated radio threshold. The fixed-RIS fallback is a supported CNOMA configuration, not an OMA implementation. All decisions and link outcomes remain simulation-only, and the flood assessment stays `NOT_ASSESSED` unless its existing evidence and official-threshold requirements are met.
+
+Run the orchestrator tests with:
+
+```powershell
+.\\.venv\\Scripts\\python.exe -m pytest tests/test_orchestrator_agent.py -q
+```
 
 ## Evaluation
 
