@@ -1,4 +1,5 @@
 """Safety-gated flood-alert dispatch; simulated/incomplete assessments never email users."""
+# ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import logging
 from typing import Any
