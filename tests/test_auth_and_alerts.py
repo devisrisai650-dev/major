@@ -8,6 +8,7 @@ def use_test_database(monkeypatch, tmp_path):
     monkeypatch.setattr(auth_service, "DB_PATH", tmp_path / "auth.sqlite3")
     monkeypatch.delenv("FLOODAI_ADMIN_EMAIL", raising=False)
     monkeypatch.delenv("FLOODAI_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setenv("FLOODAI_EMAIL_VERIFICATION_REQUIRED", "true")
     auth_service.init_db()
 
 
