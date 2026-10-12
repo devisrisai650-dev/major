@@ -27,6 +27,8 @@ def init_db():
         actor_email TEXT,action TEXT NOT NULL,target TEXT,outcome TEXT NOT NULL,details TEXT,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS alert_dispatches(id INTEGER PRIMARY KEY AUTOINCREMENT,region_id TEXT NOT NULL,status TEXT NOT NULL,
         event_id TEXT NOT NULL,recipient_count INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,UNIQUE(region_id,status,event_id));
+        CREATE TABLE IF NOT EXISTS login_attempts(attempt_key TEXT PRIMARY KEY,failures INTEGER NOT NULL,
+        window_started_at TEXT NOT NULL,locked_until TEXT);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
         """)
@@ -151,3 +153,40 @@ def reserve_alert_dispatch(region_id,status_value,event_id):
     except sqlite3.IntegrityError: return False
 def finish_alert_dispatch(region_id,status_value,event_id,count):
     with _connect() as db: db.execute("UPDATE alert_dispatches SET recipient_count=? WHERE region_id=? AND status=? AND event_id=?",(count,region_id,status_value,event_id))
+
+
+def login_is_locked(attempt_key):
+    with _connect() as db:
+        row = db.execute("SELECT locked_until FROM login_attempts WHERE attempt_key=?", (attempt_key,)).fetchone()
+        if not row or not row["locked_until"]:
+            return False
+        locked_until = datetime.fromisoformat(row["locked_until"])
+        if locked_until > now_utc():
+            return True
+        db.execute("DELETE FROM login_attempts WHERE attempt_key=?", (attempt_key,))
+        return False
+
+
+def record_login_failure(attempt_key):
+    current = now_utc()
+    window_start = current - timedelta(minutes=15)
+    with _connect() as db:
+        row = db.execute("SELECT failures,window_started_at FROM login_attempts WHERE attempt_key=?",
+                         (attempt_key,)).fetchone()
+        if not row or datetime.fromisoformat(row["window_started_at"]) < window_start:
+            failures = 1
+            started = iso(current)
+        else:
+            failures = int(row["failures"]) + 1
+            started = row["window_started_at"]
+        locked_until = iso(current + timedelta(minutes=15)) if failures >= 5 else None
+        db.execute("""INSERT INTO login_attempts(attempt_key,failures,window_started_at,locked_until)
+                      VALUES(?,?,?,?) ON CONFLICT(attempt_key) DO UPDATE SET
+                      failures=excluded.failures,window_started_at=excluded.window_started_at,
+                      locked_until=excluded.locked_until""",
+                   (attempt_key, failures, started, locked_until))
+
+
+def clear_login_failures(attempt_key):
+    with _connect() as db:
+        db.execute("DELETE FROM login_attempts WHERE attempt_key=?", (attempt_key,))
