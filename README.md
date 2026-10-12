@@ -42,6 +42,14 @@ The rule-based `orchestrator_agent.py` selects a supported communication-control
 
 The orchestrator records its reason, observed SNR summary, available-node count, chosen action and per-policy counts. The API returns this under `orchestrator`; CLI runs print the selected mode and each attempt's policy. These rules are a transparent baseline, not a trained meta-agent. The 3 dB threshold is a simulation policy setting, not a validated radio threshold. The fixed-RIS fallback is a supported CNOMA configuration, not an OMA implementation. All decisions and link outcomes remain simulation-only, and the flood assessment stays `NOT_ASSESSED` unless its existing evidence and official-threshold requirements are met.
 
+Compare the DRL-only controller against the rule-based orchestrator on paired seeded light/moderate/severe channel scenarios with:
+
+```powershell
+.\\.venv\\Scripts\\python.exe evaluate_orchestrator.py --seeds 5 --steps 40 --output outputs/orchestrator_comparison.csv
+```
+
+The CSV reports delivery, latency, policy-selection counts and outage exposure for each paired run. Compare the generated results; do not assume orchestration improves delivery before the evaluation is run.
+
 Run the orchestrator tests with:
 
 ```powershell
@@ -146,7 +154,7 @@ Before treating a run as a reproducible project result:
 1. Run `pytest -q` and `ruff check .`.
 2. Train the synthetic channel model with an explicit named scenario.
 3. Run the multi-seed RIS evaluation with disjoint training and evaluation seeds.
-4. Inspect `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, `outputs/ris_training_curves.csv`, and `outputs/experiment_metadata.json`.
+4. Inspect `outputs/orchestrator_comparison.csv`, `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, `outputs/ris_training_curves.csv`, and `outputs/experiment_metadata.json`.
 5. Generate plots only from the CSV outputs.
 6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
 7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.
