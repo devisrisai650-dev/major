@@ -38,18 +38,14 @@ def test_admin_is_bootstrapped_only_from_environment(monkeypatch, tmp_path):
 
 def test_session_cookie_resolves_server_side_user(monkeypatch, tmp_path):
     use_test_database(monkeypatch, tmp_path)
-    user_id, token = auth_service.create_user("session@gmail.com", "a-long-user-password")
-    auth_service.verify_email_token(
-        __import__("sqlite3").connect(auth_service.DB_PATH).execute(
-            "SELECT ''"
-        ).fetchone()[0]
-    ) if False else None
-    # Create a verified account through the supported one-time token flow.
-    with auth_service._connect() as db:
-        row = db.execute("SELECT verification_token_hash FROM users WHERE id=?", (user_id,)).fetchone()
-        db.execute("UPDATE users SET is_verified=1, verification_token_hash=NULL, verification_expires_at=NULL WHERE id=?", (user_id,))
+    user_id, verify_token = auth_service.create_user("session@gmail.com", "a-long-user-password")
+    assert user_id > 0
+    assert auth_service.verify_email_token(verify_token) is True
     raw, _ = auth_service.create_session(user_id)
-    request = Request({"type": "http", "method": "GET", "path": "/", "headers": [(b"cookie", f"floodai_session={raw}".encode())]})
+    request = Request({
+        "type": "http", "method": "GET", "path": "/",
+        "headers": [(b"cookie", f"floodai_session={raw}".encode())],
+    })
     assert auth_service.get_user_from_request(request)["email"] == "session@gmail.com"
 
 
@@ -70,6 +66,7 @@ def test_alert_dispatch_requires_verified_official_evidence(monkeypatch, tmp_pat
 def test_verified_alert_sends_once_and_suppresses_duplicates(monkeypatch, tmp_path):
     use_test_database(monkeypatch, tmp_path)
     user_id, token = auth_service.create_user("alerts@gmail.com", "a-long-user-password")
+    assert user_id > 0
     assert auth_service.verify_email_token(token)
     sent = []
     monkeypatch.setattr(alert_service, "send_flood_alert", lambda recipient, **kwargs: sent.append(recipient))
