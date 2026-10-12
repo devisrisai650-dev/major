@@ -49,12 +49,7 @@ kubectl apply -f k8s/
 Create the secret before relying on admin access or email delivery. Use a strong unique admin password and a Google App Password (not your normal Gmail password):
 
 ```powershell
-kubectl -n floodai create secret generic floodai-auth-secrets \\
-  --from-literal=FLOODAI_ADMIN_EMAIL='admin@example.com' \\
-  --from-literal=FLOODAI_ADMIN_PASSWORD='REPLACE_WITH_A_LONG_UNIQUE_SECRET' \\
-  --from-literal=FLOODAI_SMTP_USER='your-sender@gmail.com' \\
-  --from-literal=FLOODAI_SMTP_APP_PASSWORD='YOUR_GOOGLE_APP_PASSWORD' \\
-  --from-literal=FLOODAI_EMAIL_FROM='your-sender@gmail.com'
+kubectl -n floodai create secret generic floodai-auth-secrets --from-literal=FLOODAI_ADMIN_EMAIL='admin@example.com' --from-literal=FLOODAI_ADMIN_PASSWORD='REPLACE_WITH_A_LONG_UNIQUE_SECRET' --from-literal=FLOODAI_SMTP_USER='your-sender@gmail.com' --from-literal=FLOODAI_SMTP_APP_PASSWORD='YOUR_GOOGLE_APP_PASSWORD' --from-literal=FLOODAI_EMAIL_FROM='your-sender@gmail.com'
 ```
 
 For an existing secret, update it with `kubectl create secret generic ... --dry-run=client -o yaml | kubectl apply -f -`. Do not commit real secrets to Git. For public production access, set the external base URL and enable secure cookies behind HTTPS/TLS.
