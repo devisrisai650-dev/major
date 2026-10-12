@@ -48,9 +48,9 @@ Compare the DRL-only controller against the rule-based orchestrator on paired se
 .\\.venv\\Scripts\\python.exe evaluate_orchestrator.py --seeds 5 --messages 20 --steps 40 --output outputs/orchestrator_comparison.csv
 ```
 
-The CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The experiment includes an explicit outage-stress scenario and reports whether fallback/safe-wait actually activate. A short comparison in which both controllers only use the DRL policy is inconclusive; do not assume orchestration improves delivery before the paired results are reviewed.
+The episode CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The run also writes a paired summary CSV (by default, `outputs/orchestrator_comparison_paired_summary.csv`) with DRL and orchestrated delivery rates, the orchestrated-minus-DRL paired delivery difference and a 95% paired-bootstrap confidence interval, latency differences, and fallback/safe-wait activation rates. A CI that includes zero does not establish a delivery benefit. The outage-stress experiment confirms the fallback paths activate, but the currently observed run does not show a delivery improvement; orchestration should not be described as more reliable without further evidence.
 
-Run the orchestrator tests with:
+Reference stress-evaluation findings and limitations are recorded in [`docs/ORCHESTRATOR_STRESS_RESULTS.md`](docs/ORCHESTRATOR_STRESS_RESULTS.md). Re-run the experiment and inspect the generated paired summary before making any performance claim.\n\nRun the orchestrator tests with:
 
 ```powershell
 .\\.venv\\Scripts\\python.exe -m pytest tests/test_orchestrator_agent.py -q
@@ -154,7 +154,7 @@ Before treating a run as a reproducible project result:
 1. Run `pytest -q` and `ruff check .`.
 2. Train the synthetic channel model with an explicit named scenario.
 3. Run the multi-seed RIS evaluation with disjoint training and evaluation seeds.
-4. Inspect `outputs/orchestrator_comparison.csv`, `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, `outputs/ris_training_curves.csv`, and `outputs/experiment_metadata.json`.
+4. Inspect `outputs/orchestrator_comparison.csv`, `outputs/orchestrator_comparison_paired_summary.csv`, `outputs/ris_summary.csv`, `outputs/ris_priority_summary.csv`, `outputs/ris_weight_ablation.csv`, `outputs/ris_training_curves.csv`, and `outputs/experiment_metadata.json`.
 5. Generate plots only from the CSV outputs.
 6. Keep generated Q-tables, plots, and experiment CSVs separate from source/configuration commits unless a specific experiment artifact needs archival.
 7. Never describe simulated channel, RIS, delivery, latency, AoI, or synthetic-model results as field measurements.
