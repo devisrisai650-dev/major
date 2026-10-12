@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 from fastapi import HTTPException
 
 from services.scenario_api import ScenarioRequest, ScenarioRunRequest, generate, run_scenario
