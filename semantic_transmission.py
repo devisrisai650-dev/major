@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from orchestrator_agent import (
+    choose_fixed_ris_action,
+    select_policy,
+    summarize_decisions,
+)
 from ris_agent import QLearningRISAgent
 from ris_environment import RISEnvironment
 
@@ -50,7 +55,12 @@ def transmit_semantic_message(
     learn: bool = False,
     channel_context: dict | None = None,
 ) -> dict:
-    """Transmit one semantic packet through the software RIS-CNOMA loop."""
+    """Transmit one semantic packet with per-attempt orchestration.
+
+    Every radio quantity and delivery outcome is simulated. The orchestrator
+    chooses between the trained RIS-CNOMA policy, a fixed-RIS CNOMA fallback,
+    and safe wait when no transmission action is feasible.
+    """
     if not packet:
         raise ValueError("Semantic packet must not be empty")
     if max_attempts < 1:
@@ -74,17 +84,30 @@ def transmit_semantic_message(
     priority = priority_for_message(priorities)
     observation = env.reset(priority=priority)
     attempts = []
+    decisions = []
     received = None
 
     for attempt_number in range(1, max_attempts + 1):
+        action_mask = env.action_mask(observation)
+        decision = select_policy(observation, action_mask, priority)
+        if decision["policy"] == "drl_ris_cnoma":
+            action = agent.choose_action(observation, action_mask, explore=False)
+        elif decision["policy"] == "fixed_ris_cnoma_fallback":
+            action = choose_fixed_ris_action(observation, action_mask)
+        else:
+            action = env.wait_action
+
+        decision_record = {
+            **decision,
+            "attempt": attempt_number,
+            "selected_action": int(action),
+        }
+        decisions.append(decision_record)
         state = agent.encode_state(observation)
-        action = agent.choose_action(
-            observation, env.action_mask(observation), explore=False
-        )
         next_observation, reward, env_done, info = env.step(action, packet=packet)
         terminal = bool(info["delivered"] or env_done or attempt_number == max_attempts)
         next_state = agent.encode_state(next_observation)
-        if learn:
+        if learn and decision["policy"] == "drl_ris_cnoma":
             agent.learn(
                 state,
                 action,
@@ -116,6 +139,10 @@ def transmit_semantic_message(
             "waited": info["waited"],
             "rain_attenuation_db": info["rain_attenuation_db"],
             "doppler_hz": info["doppler_hz"],
+            "node_available": info["node_available"],
+            "node_outage_count": info["node_outage_count"],
+            "orchestrator_policy": decision["policy"],
+            "orchestrator_reason": decision["reason"],
             "reward": reward,
         })
         observation = next_observation
@@ -130,6 +157,8 @@ def transmit_semantic_message(
     delivered_attempt = next((item for item in attempts if item["delivered"]), None)
     critical_delivered = delivered and priority == "CRITICAL"
     aoi_summary = summarize_aoi(attempts)
+    orchestration = summarize_decisions(decisions)
+    policy_counts = orchestration["policy_counts"]
     return {
         "priority": priority,
         "delivered": delivered,
@@ -149,6 +178,14 @@ def transmit_semantic_message(
         ),
         "packet_received": received,
         "attempts": attempts,
+        "orchestrator": {
+            **orchestration,
+            "selected_policy": (
+                max(policy_counts, key=policy_counts.get) if policy_counts else None
+            ),
+            "policy": "rule_based",
+            "policy_version": "1.0",
+        },
         "policy_path": str(policy_path),
         "simulation_only": True,
         "learned": learn,

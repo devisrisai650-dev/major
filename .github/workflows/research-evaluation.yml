@@ -9,6 +9,11 @@ on:
       - ".github/workflows/research-evaluation.yml"
       - "evaluate_ris_agent.py"
       - "evaluate_access_modes.py"
+      - "evaluate_orchestrator.py"
+      - "orchestrator_agent.py"
+      - "semantic_transmission.py"
+      - "api.py"
+      - "main.py"
       - "plot_results.py"
       - "ris_agent.py"
       - "ris_environment.py"
@@ -77,6 +82,8 @@ jobs:
             --eval-episodes-per-seed 1 \
             --steps "$STEPS" \
             --output-dir outputs
+      - name: Evaluate DRL-only versus orchestrated policies
+        run: python evaluate_orchestrator.py --seeds 5 --steps 40 --output outputs/orchestrator_comparison.csv
       - name: Run controlled OMA/CNOMA/RIS-CNOMA ablation
         run: python evaluate_access_modes.py --seeds 10 --steps 200 --output outputs/access_mode_ablation.csv
       - name: Generate plots
