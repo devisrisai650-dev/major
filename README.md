@@ -50,7 +50,7 @@ Compare the DRL-only controller against the rule-based orchestrator on paired se
 
 The episode CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The run also writes a paired summary CSV (by default, `outputs/orchestrator_comparison_paired_summary.csv`) with DRL and orchestrated delivery rates, the orchestrated-minus-DRL paired delivery difference and a 95% paired-bootstrap confidence interval, latency differences, and fallback/safe-wait activation rates. A CI that includes zero does not establish a delivery benefit. The outage-stress experiment confirms the fallback paths activate, but the currently observed run does not show a delivery improvement; orchestration should not be described as more reliable without further evidence.
 
-Run the orchestrator tests with:
+Reference stress-evaluation findings and limitations are recorded in [`docs/ORCHESTRATOR_STRESS_RESULTS.md`](docs/ORCHESTRATOR_STRESS_RESULTS.md). Re-run the experiment and inspect the generated paired summary before making any performance claim.\n\nRun the orchestrator tests with:
 
 ```powershell
 .\\.venv\\Scripts\\python.exe -m pytest tests/test_orchestrator_agent.py -q
