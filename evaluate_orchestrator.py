@@ -10,6 +10,8 @@ import argparse
 import csv
 from pathlib import Path
 
+import numpy as np
+
 from orchestrator_agent import choose_fixed_ris_action, select_policy
 from ris_agent import QLearningRISAgent
 from ris_environment import RISEnvironment
@@ -124,6 +126,100 @@ def run_episode(
     }
 
 
+
+def _bootstrap_mean_ci(values, samples: int = 2000, seed: int = 12345):
+    """Percentile bootstrap CI for paired per-message differences."""
+    values = np.asarray(list(values), dtype=float)
+    if values.size == 0:
+        return None, None
+    rng = np.random.default_rng(seed)
+    draws = rng.choice(values, size=(samples, values.size), replace=True).mean(axis=1)
+    low, high = np.percentile(draws, [2.5, 97.5])
+    return float(low), float(high)
+
+
+def summarize_paired_results(rows: list[dict], bootstrap_samples: int = 2000) -> list[dict]:
+    """Summarize matched DRL/orchestrated episodes with paired bootstrap CIs."""
+    pairs = {}
+    for row in rows:
+        key = (row["scenario"], int(row["seed"]), int(row["message_index"]))
+        controller = row["controller"]
+        if controller not in {"drl_only", "orchestrated"}:
+            raise ValueError(f"Unknown controller in evaluation rows: {controller}")
+        if controller in pairs.setdefault(key, {}):
+            raise ValueError(f"Duplicate controller row for paired episode {key}: {controller}")
+        pairs[key][controller] = row
+
+    by_scenario = {}
+    for key, controllers in pairs.items():
+        if set(controllers) != {"drl_only", "orchestrated"}:
+            raise ValueError(f"Incomplete controller pair for episode {key}")
+        by_scenario.setdefault(key[0], []).append(controllers)
+
+    summaries = []
+    for scenario in SCENARIOS:
+        matched = by_scenario.get(scenario, [])
+        if not matched:
+            continue
+        drl_delivery = np.asarray([float(p["drl_only"]["delivered"]) for p in matched])
+        orch_delivery = np.asarray([float(p["orchestrated"]["delivered"]) for p in matched])
+        delivery_diffs = orch_delivery - drl_delivery
+        delivery_low, delivery_high = _bootstrap_mean_ci(
+            delivery_diffs, samples=bootstrap_samples, seed=12345
+        )
+
+        latency_pairs = [
+            (float(p["drl_only"]["mean_attempt_latency_ms"]),
+             float(p["orchestrated"]["mean_attempt_latency_ms"]))
+            for p in matched
+            if p["drl_only"]["mean_attempt_latency_ms"] is not None
+            and p["orchestrated"]["mean_attempt_latency_ms"] is not None
+        ]
+        latency_diffs = np.asarray([b - a for a, b in latency_pairs], dtype=float)
+        latency_low, latency_high = _bootstrap_mean_ci(
+            latency_diffs, samples=bootstrap_samples, seed=54321
+        )
+        summaries.append({
+            "scenario": scenario,
+            "paired_episodes": len(matched),
+            "drl_delivery_rate": float(drl_delivery.mean()),
+            "orchestrated_delivery_rate": float(orch_delivery.mean()),
+            "delivery_difference_orchestrated_minus_drl": float(delivery_diffs.mean()),
+            "delivery_difference_ci95_low": delivery_low,
+            "delivery_difference_ci95_high": delivery_high,
+            "latency_pairs": len(latency_pairs),
+            "drl_mean_attempt_latency_ms": (
+                float(np.mean([a for a, _ in latency_pairs])) if latency_pairs else None
+            ),
+            "orchestrated_mean_attempt_latency_ms": (
+                float(np.mean([b for _, b in latency_pairs])) if latency_pairs else None
+            ),
+            "latency_difference_ms_orchestrated_minus_drl": (
+                float(latency_diffs.mean()) if latency_pairs else None
+            ),
+            "latency_difference_ci95_low_ms": latency_low,
+            "latency_difference_ci95_high_ms": latency_high,
+            "orchestrator_fallback_activation_rate": float(np.mean([
+                p["orchestrated"]["fallback_activated"] for p in matched
+            ])),
+            "orchestrator_safe_wait_activation_rate": float(np.mean([
+                p["orchestrated"]["safe_wait_activated"] for p in matched
+            ])),
+            "simulation_only": True,
+        })
+    return summaries
+
+
+def write_paired_summary(rows: list[dict], output_path: Path, bootstrap_samples: int = 2000):
+    summary = summarize_paired_results(rows, bootstrap_samples=bootstrap_samples)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if summary:
+        with output_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(summary[0]))
+            writer.writeheader()
+            writer.writerows(summary)
+    return summary
+
 def main():
     parser = argparse.ArgumentParser(
         description="Paired DRL-only versus orchestrated software simulation"
@@ -133,6 +229,7 @@ def main():
     parser.add_argument("--messages", type=int, default=20, help="Messages per seed/scenario")
     parser.add_argument("--steps", type=int, default=40, help="Maximum attempts per message")
     parser.add_argument("--output", default="outputs/orchestrator_comparison.csv")
+    parser.add_argument("--summary-output", default=None, help="Paired summary CSV; defaults beside --output")
     args = parser.parse_args()
     if args.seeds < 1 or args.messages < 1 or args.steps < 1:
         parser.error("--seeds, --messages and --steps must be positive")
@@ -160,9 +257,24 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
+    summary_path = (
+        Path(args.summary_output)
+        if args.summary_output
+        else output.with_name(f"{output.stem}_paired_summary.csv")
+    )
+    summary = write_paired_summary(rows, summary_path)
     print("SIMULATION-ONLY ORCHESTRATOR STRESS COMPARISON")
     print(f"Rows: {len(rows)}")
-    print(f"Output: {output}")
+    print(f"Episode output: {output}")
+    print(f"Paired summary: {summary_path}")
+    for item in summary:
+        print(
+            f"{item['scenario']:>13} | paired n={item['paired_episodes']:>4} | "
+            f"delivery delta={item['delivery_difference_orchestrated_minus_drl']:+.3f} "
+            f"(95% bootstrap CI {item['delivery_difference_ci95_low']:+.3f}, "
+            f"{item['delivery_difference_ci95_high']:+.3f}) | "
+            f"latency delta={item['latency_difference_ms_orchestrated_minus_drl']} ms"
+        )
     for scenario in SCENARIOS:
         for controller in ("drl_only", "orchestrated"):
             selected = [
