@@ -77,6 +77,7 @@ def generate_scenario(
         "normal": 0.05, "rising": 0.65, "severe": 1.0,
         "emergency": 1.2, "recovery": 0.25,
     }[scenario]
+    outage_probability = {"healthy": 0.02, "partial": 0.28, "total": 1.0}[communication_condition]
     for index in range(steps):
         progress = index / (steps - 1)
         if scenario == "recovery":
@@ -113,7 +114,7 @@ def generate_scenario(
             "flow_velocity_m_s": round(min(2.0, 0.15 + 0.018 * rain + 0.2 * progress), 3),
             "debris_density": round(min(1.0, max(0.0, 0.12 + 0.006 * rain + 0.2 * progress)), 3),
             "los_obstruction": round(min(1.0, max(0.0, 0.08 + rain / 180.0 + 0.25 * progress)), 3),
-            "node_available": communication_condition != "total",
+            "node_available": rng.random() >= outage_probability,
             "scenario_phase": phase,
             "data_source": "synthetic_scenario",
         })
