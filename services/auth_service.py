@@ -60,6 +60,9 @@ def _bootstrap_admin():
             if existing["role"]!="admin": raise RuntimeError("Configured admin email already belongs to a regular account.")
             db.execute("UPDATE users SET password_hash=?,is_verified=1,is_active=1 WHERE id=?",(_password_hash(password),existing["id"]))
         else:
+            another_admin=db.execute("SELECT email FROM users WHERE role='admin' LIMIT 1").fetchone()
+            if another_admin:
+                raise RuntimeError("FloodAI permits one platform admin; configured email does not match the provisioned admin.")
             db.execute("INSERT INTO users(email,password_hash,role,is_verified,is_active,alerts_enabled,created_at) VALUES(?,?,'admin',1,1,0,?)",(email,_password_hash(password),iso()))
 def create_user(email,password):
     email=validate_email(email); validate_password(password); token=secrets.token_urlsafe(32)
