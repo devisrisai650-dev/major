@@ -1,4 +1,5 @@
 """Server-side authentication, sessions, and audit logging for FloodAI."""
+# ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import hashlib, hmac, os, re, secrets, sqlite3
 from datetime import datetime, timedelta, timezone
