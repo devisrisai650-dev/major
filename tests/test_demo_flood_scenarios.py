@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 
 
-DATASET = Path(__file__).resolve().parents[1] / "data" / "demo_flood_scenarios.csv"
+DATASET = Path(__file__).resolve().parents[1] / "config" / "demo_flood_scenarios.csv"
 
 
 def test_demo_dataset_covers_all_regions_and_hours():
