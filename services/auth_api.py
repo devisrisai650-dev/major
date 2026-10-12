@@ -16,6 +16,12 @@ class LoginRequest(BaseModel):
     password:str=Field(min_length=1,max_length=128)
 class NotificationPreference(BaseModel): enabled:bool
 class UserStatusUpdate(BaseModel): active:bool
+class AdminPipelineRequest(BaseModel):
+    region_id:str=Field(min_length=1)
+    communication_attempts:int=Field(default=5,ge=1,le=20)
+    seed:int=2026
+    time_of_day:str=Field(default="12:00",pattern=r"^(?:[01]\\d|2[0-3]):00$")
+    learn:bool=False
 
 @router.post("/api/auth/register",status_code=201)
 def register(payload:RegisterRequest,request:Request)->dict[str,Any]:
@@ -76,3 +82,13 @@ def admin_backend(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
       "Flood status must remain NOT_ASSESSED unless verified official thresholds and fresh QC-passed gauge evidence are available.",
       "Secrets and password hashes are never returned by this endpoint."]}
     audit("admin_view_backend",actor=admin); return result
+
+
+@router.post("/api/admin/pipeline")
+def admin_run_pipeline(payload: AdminPipelineRequest, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    """Expose research/backend diagnostics only to the pre-provisioned platform admin."""
+    from api import RunRequest, run_pipeline
+    result = run_pipeline(RunRequest(**payload.model_dump()))
+    audit("admin_pipeline_run", actor=admin, target=payload.region_id,
+          details=f"seed={payload.seed}; learn={payload.learn}; outputs_are_simulated=true")
+    return result
