@@ -20,7 +20,7 @@ class AdminPipelineRequest(BaseModel):
     region_id:str=Field(min_length=1)
     communication_attempts:int=Field(default=5,ge=1,le=20)
     seed:int=2026
-    time_of_day:str=Field(default="12:00",pattern=r"^(?:[01]\\d|2[0-3]):00$")
+    time_of_day:str=Field(default="12:00",pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn:bool=False
 
 @router.post("/api/auth/register",status_code=201)
