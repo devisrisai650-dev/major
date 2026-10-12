@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib, hmac, os, re, secrets, sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 from fastapi import HTTPException, Request, status
 ROOT=Path(__file__).resolve().parents[1]
 DB_PATH=Path(os.getenv("FLOODAI_AUTH_DB",str(ROOT/"data"/"floodai_auth.sqlite3")))
