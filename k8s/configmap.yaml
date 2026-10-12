@@ -8,3 +8,5 @@ data:
   FLOODAI_AUTH_DB: /app/data/floodai_auth.sqlite3
   FLOODAI_BASE_URL: http://localhost:8000
   FLOODAI_COOKIE_SECURE: "false"
+  FLOODAI_ALERT_MONITOR_ENABLED: "true"
+  FLOODAI_ALERT_MONITOR_INTERVAL_SECONDS: "300"
