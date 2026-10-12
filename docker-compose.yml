@@ -6,6 +6,16 @@ services:
       - "8000:8000"
     environment:
       FLOODAI_ENV: docker
+      FLOODAI_AUTH_DB: /app/data/floodai_auth.sqlite3
+      FLOODAI_ADMIN_EMAIL: ${FLOODAI_ADMIN_EMAIL:-}
+      FLOODAI_ADMIN_PASSWORD: ${FLOODAI_ADMIN_PASSWORD:-}
+      FLOODAI_SMTP_USER: ${FLOODAI_SMTP_USER:-}
+      FLOODAI_SMTP_APP_PASSWORD: ${FLOODAI_SMTP_APP_PASSWORD:-}
+      FLOODAI_EMAIL_FROM: ${FLOODAI_EMAIL_FROM:-}
+      FLOODAI_BASE_URL: ${FLOODAI_BASE_URL:-http://localhost:8000}
+      FLOODAI_COOKIE_SECURE: ${FLOODAI_COOKIE_SECURE:-false}
+    volumes:
+      - floodai_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
@@ -36,3 +46,6 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+
+volumes:
+  floodai_data:
