@@ -73,6 +73,14 @@ def test_api_learning_is_opt_in_and_persisted_policy_is_not_changed_when_false(t
         "priority": "MEDIUM", "delivered": True, "packet_received": "ok",
         "attempts": [], "policy_path": str(policy),
         "simulation_only": True, "learned": False, "used_seed": 7,
+        "orchestrator": {
+            "policy": "rule_based",
+            "selected_policy": "drl_ris_cnoma",
+            "policy_counts": {"drl_ris_cnoma": 1},
+            "decision_count": 1,
+            "decisions": [{"policy": "drl_ris_cnoma", "attempt": 1}],
+            "simulation_only": True,
+        },
     }
     with patch("api.get_weather_data", return_value=weather),          patch("api.get_discharge_analysis", return_value=discharge),          patch("api.CsvReplayProvider.get_water_level", return_value=water),          patch("api.transmit_semantic_message", return_value=transmission):
         request = RunRequest(region_id="region_001", seed=7, learn=False)
@@ -80,6 +88,9 @@ def test_api_learning_is_opt_in_and_persisted_policy_is_not_changed_when_false(t
     assert result["provenance"]["learning_enabled"] is False
     assert policy.read_bytes() == before
     assert Path(result["communication"]["policy_path"]) == policy
+    assert result["orchestrator"]["policy"] == "rule_based"
+    assert result["orchestrator"]["selected_policy"] == "drl_ris_cnoma"
+    assert result["provenance"]["orchestrator_policy"] == "rule_based"
 
 def test_api_reports_mean_delivery_and_final_aoi_separately():
     result = _communication_kpis({
