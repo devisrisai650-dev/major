@@ -24,6 +24,7 @@ from services.semantic_priority import (
     select_transmission_parameters,
 )
 from services.weather_service import get_weather_data
+from services.scenario_api import router as scenario_router
 
 def _flood_dashboard(analysis, water, weather, discharge):
     assessment = analysis["flood_assessment"]
@@ -118,6 +119,8 @@ app = FastAPI(
     description="Environmental replay + semantic communication + software-only virtual RIS simulation.",
     version="1.1.0",
 )
+app.include_router(scenario_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
