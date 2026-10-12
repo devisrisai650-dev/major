@@ -83,3 +83,14 @@ def test_verified_alert_sends_once_and_suppresses_duplicates(monkeypatch, tmp_pa
     assert first["sent"] == 1
     assert second["duplicate"] is True
     assert sent == ["alerts@gmail.com"]
+
+
+def test_login_attempts_are_throttled_and_cleared_after_success(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    key = "test-login-attempt-key"
+    assert auth_service.login_is_locked(key) is False
+    for _ in range(5):
+        auth_service.record_login_failure(key)
+    assert auth_service.login_is_locked(key) is True
+    auth_service.clear_login_failures(key)
+    assert auth_service.login_is_locked(key) is False
