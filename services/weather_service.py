@@ -3,12 +3,16 @@ import requests
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
+
 def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
     params = {
-        "latitude": latitude, "longitude": longitude, "timezone": timezone,
+        "latitude": latitude,
+        "longitude": longitude,
+        "timezone": timezone,
         "current": "temperature_2m,relative_humidity_2m,precipitation,rain,showers,wind_speed_10m,wind_direction_10m,surface_pressure",
-        "hourly": "precipitation,rain,showers",
-        "past_days": 1, "forecast_days": 2
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,rain,showers,wind_speed_10m,wind_direction_10m",
+        "past_days": 1,
+        "forecast_days": 2,
     }
     response = requests.get(BASE_URL, params=params, timeout=20)
     response.raise_for_status()
@@ -17,36 +21,70 @@ def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     rows = []
+    hourly_conditions = []
     for i, stamp in enumerate(times):
         t = datetime.fromisoformat(stamp)
+        row = {
+            "time": stamp,
+            "temperature_c": _at(hourly.get("temperature_2m"), i),
+            "humidity_pct": _at(hourly.get("relative_humidity_2m"), i),
+            "precipitation_mm": _at(hourly.get("precipitation"), i),
+            "rain_mm": _at(hourly.get("rain"), i),
+            "showers_mm": _at(hourly.get("showers"), i),
+            "wind_speed_kmh": _at(hourly.get("wind_speed_10m"), i),
+            "wind_direction_deg": _at(hourly.get("wind_direction_10m"), i),
+            "source_type": "observation" if t <= now else "forecast",
+        }
+        hourly_conditions.append(row)
         if t <= now:
-            rows.append({"time": stamp, "rain_mm": _at(hourly.get("rain"), i),
-                         "precipitation_mm": _at(hourly.get("precipitation"), i),
-                         "showers_mm": _at(hourly.get("showers"), i)})
+            rows.append({
+                "time": stamp,
+                "rain_mm": row["rain_mm"],
+                "precipitation_mm": row["precipitation_mm"],
+                "showers_mm": row["showers_mm"],
+            })
     rain_windows = {}
     for hours in (1, 3, 6, 24):
         cutoff = now - timedelta(hours=hours)
-        window = [r for r in rows if cutoff < datetime.fromisoformat(r["time"]) <= now]
-        vals = [r["precipitation_mm"] for r in window if r["precipitation_mm"] is not None]
-        rain_windows[f"last_{hours}h_precipitation_mm"] = sum(vals) if len(vals) == hours else None
-        rain_windows[f"last_{hours}h_observations"] = len(vals)
+        window = [
+            row for row in rows
+            if cutoff < datetime.fromisoformat(row["time"]) <= now
+        ]
+        values = [
+            row["precipitation_mm"] for row in window
+            if row["precipitation_mm"] is not None
+        ]
+        rain_windows[f"last_{hours}h_precipitation_mm"] = (
+            sum(values) if len(values) == hours else None
+        )
+        rain_windows[f"last_{hours}h_observations"] = len(values)
     current = data.get("current", {})
-    return {"current": {
-        "time": current.get("time"),
-        "temperature_c": current.get("temperature_2m"),
-        "humidity_pct": current.get("relative_humidity_2m"),
-        "precipitation_mm": current.get("precipitation"),
-        "rain_mm": current.get("rain"), "showers_mm": current.get("showers"),
-        "wind_speed_kmh": current.get("wind_speed_10m"),
-        "wind_direction_deg": current.get("wind_direction_10m"),
-        "surface_pressure_hpa": current.get("surface_pressure")
-    }, "hourly_observations": rows, "rainfall_windows": rain_windows}
+    return {
+        "current": {
+            "time": current.get("time"),
+            "temperature_c": current.get("temperature_2m"),
+            "humidity_pct": current.get("relative_humidity_2m"),
+            "precipitation_mm": current.get("precipitation"),
+            "rain_mm": current.get("rain"),
+            "showers_mm": current.get("showers"),
+            "wind_speed_kmh": current.get("wind_speed_10m"),
+            "wind_direction_deg": current.get("wind_direction_10m"),
+            "surface_pressure_hpa": current.get("surface_pressure"),
+        },
+        "hourly_observations": rows,
+        "hourly_conditions": hourly_conditions,
+        "rainfall_windows": rain_windows,
+        "source": "Open-Meteo",
+    }
+
 
 def _at(values, index):
     return values[index] if values is not None and index < len(values) else None
 
+
 def get_current_weather(latitude, longitude, timezone="Asia/Kolkata"):
     return get_weather_data(latitude, longitude, timezone)["current"]
+
 
 def get_hourly_rainfall(latitude, longitude, timezone="Asia/Kolkata"):
     return get_weather_data(latitude, longitude, timezone)["hourly_observations"]

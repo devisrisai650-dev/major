@@ -15,6 +15,7 @@ from services.flood_scenario_generator import (
     generate_scenario,
 )
 from services.region_manager import get_region, load_regions
+from services.json_safe import to_json_safe
 
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenario-lab"])
@@ -148,7 +149,7 @@ def run_scenario(request: ScenarioRunRequest) -> dict[str, Any]:
     except (ValueError, OSError) as exc:
         raise HTTPException(status_code=500, detail=f"Scenario communication simulation failed: {exc}") from exc
 
-    return {
+    return to_json_safe({
         "scenario": scenario,
         "selected_time_step": sample,
         "semantic_packet": packet,
@@ -178,4 +179,4 @@ def run_scenario(request: ScenarioRunRequest) -> dict[str, Any]:
             "not live measurements, a flood warning, or an all-clear. Follow official "
             "local authorities for safety decisions."
         ),
-    }
+    })

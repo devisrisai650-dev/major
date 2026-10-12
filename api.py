@@ -24,7 +24,7 @@ from services.semantic_priority import (
     select_transmission_parameters,
 )
 from services.weather_service import get_weather_data
-from services.scenario_api import router as scenario_router
+from services.json_safe import to_json_safe
 
 def _flood_dashboard(analysis, water, weather, discharge):
     assessment = analysis["flood_assessment"]
@@ -118,8 +118,10 @@ app = FastAPI(
     title="FloodAI Local API",
     description="Environmental replay + semantic communication + software-only virtual RIS simulation.",
     version="1.1.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
-app.include_router(scenario_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,6 +174,7 @@ class RunRequest(BaseModel):
     region_id: str = Field(min_length=1)
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
+    time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn: bool = False
 
 
@@ -199,7 +202,6 @@ def region_detail(region_id: str):
     return {"region": region, "water_level_source": CsvReplayProvider().get_water_level(region)}
 
 
-@app.post("/api/run")
 def run_pipeline(request: RunRequest) -> dict[str, Any]:
     PIPELINE_RUNS.labels(request.region_id, str(request.learn).lower()).inc()
     try:
@@ -217,6 +219,22 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
         PIPELINE_ERRORS.labels("weather").inc()
         raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+
+    # Select the requested local hour for the weather card. Flood assessment still
+    # uses current observations and the verified-data gate; a forecast is not
+    # silently treated as a current gauge reading.
+    hourly_conditions = weather.get("hourly_conditions", [])
+    current_stamp = weather.get("current", {}).get("time")
+    if current_stamp and hourly_conditions:
+        selected_stamp = f"{current_stamp[:10]}T{request.time_of_day}"
+        selected = next(
+            (row for row in hourly_conditions if row.get("time") == selected_stamp),
+            None,
+        )
+        if selected is not None:
+            weather["selected_hour"] = selected
+        else:
+            weather["selected_hour"] = None
 
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
     water = CsvReplayProvider().get_water_level(region)
@@ -273,7 +291,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     flood_dashboard = _flood_dashboard(analysis, water, weather, discharge)
     communication_kpis = _communication_kpis(transmission)
 
-    return {
+    return to_json_safe({
         "region": region,
         "weather": weather,
         "river_discharge": discharge,
@@ -313,4 +331,77 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             "flood_assessment": "NOT_ASSESSED is neither a flood warning nor an all-clear.",
             "communication": "SNR, latency, RIS and packet delivery are simulated.",
         },
-    }
+    })
+
+
+@app.post("/api/dashboard")
+def dashboard(request: RunRequest) -> dict[str, Any]:
+    """Return only user-facing dashboard fields; keep simulation internals server-side."""
+    result = run_pipeline(request)
+    weather = result.get("weather", {})
+    flood = result.get("flood_dashboard", {})
+    indicators = result.get("flood_indicators", {})
+    water = result.get("water_level", {})
+    discharge = result.get("river_discharge", {})
+    region = result.get("region", {})
+    assessment = result.get("flood_assessment", {})
+    return to_json_safe({
+        "region": {
+            "id": region.get("id"),
+            "name": region.get("name"),
+            "river": region.get("river"),
+        },
+        "weather": {
+            "source": weather.get("source", "Open-Meteo"),
+            "current": weather.get("current", {}),
+            "selected_hour": weather.get("selected_hour"),
+        },
+        "river_discharge": {
+            "available": discharge.get("available", False),
+            "discharge_m3s": discharge.get("discharge_m3s"),
+            "time": discharge.get("time"),
+            "reason": discharge.get("reason"),
+        },
+        "water_level": {
+            "available": water.get("available", False),
+            "current_level_m": water.get("current_level_m"),
+            "latest_observed_m": water.get("latest_observed_m"),
+            "current_time": water.get("current_time"),
+            "age_hours": water.get("age_hours"),
+            "station": water.get("station"),
+            "reason": water.get("reason"),
+        },
+        "flood_assessment": {
+            "status": assessment.get("status", "NOT_ASSESSED"),
+            "state": assessment.get("state", "NOT_ASSESSED"),
+            "complete": assessment.get("complete", False),
+            "reason": assessment.get("reason"),
+        },
+        "flood_dashboard": {
+            "assessment_status": flood.get("assessment_status", "NOT_ASSESSED"),
+            "environmental_signal": flood.get("environmental_signal", "UNKNOWN"),
+            "message": flood.get("message"),
+            "readiness": {
+                "assessment_ready": flood.get("readiness", {}).get("assessment_ready", False),
+            },
+        },
+        "flood_indicators": {
+            "rainfall": {
+                "classification": indicators.get("rainfall", {}).get("classification"),
+                "current_rain_mm": indicators.get("rainfall", {}).get("current_rain_mm"),
+                "last_6h_precipitation_mm": indicators.get("rainfall", {}).get("last_6h_precipitation_mm"),
+                "last_24h_precipitation_mm": indicators.get("rainfall", {}).get("last_24h_precipitation_mm"),
+            },
+            "river": {
+                "classification": indicators.get("river", {}).get("classification"),
+                "available": indicators.get("river", {}).get("available", False),
+                "discharge_m3s": indicators.get("river", {}).get("discharge_m3s"),
+            },
+            "water_level": {
+                "classification": indicators.get("water_level", {}).get("classification"),
+                "available": indicators.get("water_level", {}).get("available", False),
+                "current_m": indicators.get("water_level", {}).get("current_m"),
+                "rate_of_change_m_per_hour": indicators.get("water_level", {}).get("rate_of_change_m_per_hour"),
+            },
+        },
+    })
