@@ -1,4 +1,5 @@
 """Periodic environment-only assessment for eligible email alerts."""
+# ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import asyncio
 import logging
