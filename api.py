@@ -28,6 +28,9 @@ from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_admin, require_user
 from services.alert_service import dispatch_verified_flood_alert
+from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+
+_alert_monitor_task = None
 
 def _flood_dashboard(analysis, water, weather, discharge):
     assessment = analysis["flood_assessment"]
@@ -129,8 +132,14 @@ app = FastAPI(
 app.include_router(auth_router)
 
 @app.on_event("startup")
-def initialize_auth_database():
+async def initialize_auth_database():
+    global _alert_monitor_task
     init_db()
+    _alert_monitor_task = start_alert_monitor()
+
+@app.on_event("shutdown")
+async def shutdown_alert_monitor():
+    await stop_alert_monitor(_alert_monitor_task)
 
 app.add_middleware(
     CORSMiddleware,
