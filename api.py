@@ -289,6 +289,11 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
         "channel_prediction": channel_prediction,
         "communication_alert": _communication_alert(transmission),
         "communication_kpis": communication_kpis,
+        "orchestrator": transmission.get("orchestrator", {
+            "policy": "unavailable",
+            "reason": "Communication result did not include orchestrator metadata.",
+            "simulation_only": True,
+        }),
         "communication": transmission,
         "provenance": {
             "communication_mode": "software_simulation",
@@ -299,6 +304,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             "flood_assessment_status": "NOT_ASSESSED",
             "channel_scenario": "regional_proxy_simulation",
             "cnoma_enabled": True,
+            "orchestrator_policy": transmission.get("orchestrator", {}).get("policy", "unavailable"),
         },
         "disclaimer": {
             "flood_assessment": "NOT_ASSESSED is neither a flood warning nor an all-clear.",
