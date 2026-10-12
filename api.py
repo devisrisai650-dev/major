@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import csv
 from typing import Any
 
 import requests
@@ -220,6 +221,7 @@ class RunRequest(BaseModel):
     seed: int = 2026
     time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn: bool = False
+    scenario_mode: str = Field(default="demo", pattern="^(demo|live)$")
 
 
 @app.get("/api/health")
@@ -407,7 +409,74 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
     water = CsvReplayProvider().get_water_level(region)
     analysis = analyze_flood_state(weather, discharge, water)
+    scenario = None
+    if request.scenario_mode == "demo":
+        # Clearly labelled synthetic scenario: demonstration data must never be
+        # presented as an official warning or mixed silently with live gauge data.
+        scenario_path = Path(__file__).resolve().parent / "data" / "demo_flood_scenarios.csv"
+        try:
+            with scenario_path.open(newline="", encoding="utf-8") as handle:
+                scenario = next(
+                    row for row in csv.DictReader(handle)
+                    if row["region_id"] == region["id"] and row["hour"] == request.time_of_day
+                )
+        except (OSError, StopIteration, KeyError) as exc:
+            raise HTTPException(status_code=500, detail="Demo scenario dataset is missing a selected region/time row.") from exc
+
+        rain = float(scenario["rainfall_mm_per_hour"])
+        rain6 = float(scenario["rainfall_6h_mm"])
+        rain24 = float(scenario["rainfall_24h_mm"])
+        rise = float(scenario["water_level_rise_m_per_hour"])
+        level = float(scenario["water_level_m"])
+        demo_discharge = float(scenario["river_discharge_m3s"])
+        weather["source"] = "Open-Meteo weather + synthetic flood demo rainfall"
+        weather.setdefault("current", {})["rain_mm"] = rain
+        weather["rainfall_windows"] = {
+            "last_1h_precipitation_mm": rain,
+            "last_3h_precipitation_mm": rain * 3,
+            "last_6h_precipitation_mm": rain6,
+            "last_24h_precipitation_mm": rain24,
+        }
+        analysis["rainfall"] = {
+            "current_rain_mm": rain,
+            "classification": "VERY_HIGH" if rain >= 20 else "HIGH" if rain >= 10 else "LOW",
+            "last_1h_precipitation_mm": rain,
+            "last_3h_precipitation_mm": rain * 3,
+            "last_6h_precipitation_mm": rain6,
+            "last_24h_precipitation_mm": rain24,
+            "source": "synthetic demonstration dataset",
+        }
+        analysis["river"] = {
+            "discharge_m3s": demo_discharge, "available": True,
+            "data_type": "synthetic_demo", "time": request.time_of_day,
+            "classification": "HIGH" if demo_discharge >= 100 else "MODERATE",
+            "reason": "Synthetic demonstration value; not a live gauge measurement.",
+        }
+        water.update({
+            "available": True, "is_recent": True, "current_level_m": level,
+            "latest_observed_m": level, "current_time": request.time_of_day,
+            "age_hours": 0.0, "rate_of_change_m_per_hour": rise,
+            "station": "SYNTHETIC_DEMO", "reason": "Synthetic scenario value; not an official gauge reading.",
+        })
+        analysis["water_level"] = {
+            "available": True, "current_m": level, "latest_observed_m": level,
+            "rate_of_change_m_per_hour": rise,
+            "classification": "VERY_RAPIDLY_RISING" if rise >= 0.2 else "RAPIDLY_RISING" if rise >= 0.1 else "RISING",
+            "station": "SYNTHETIC_DEMO", "observation_time": request.time_of_day,
+            "age_hours": 0.0, "reason": "Synthetic demonstration value; not an official gauge reading.",
+        }
+        analysis["flood_assessment"] = {
+            "status": "DEMO_FLOOD_SCENARIO", "state": "DEMO_FLOOD_SCENARIO",
+            "score": None, "complete": False,
+            "reason": "SIMULATED FLOOD DEMONSTRATION ONLY. Synthetic data is not a real flood warning or an all-clear.",
+            "missing_or_unconfigured": ["synthetic demonstration; official thresholds and live QC gauge evidence are not applied"],
+        }
     flood = _flood_dashboard(analysis, water, weather, discharge)
+    if scenario is not None:
+        flood["assessment_status"] = "DEMO_FLOOD_SCENARIO"
+        flood["environmental_signal"] = "HIGH" if scenario["communication_status"] == "PARTIAL_OUTAGE" else "ELEVATED" if scenario["communication_status"] == "DEGRADED" else "LOW"
+        flood["message"] = "SIMULATED FLOOD DEMONSTRATION ONLY — synthetic rainfall and gauge values are not real-world warnings."
+        flood["readiness"]["assessment_ready"] = False
     indicators = {
         "rainfall": analysis.get("rainfall", {}),
         "river": analysis.get("river", {}),
@@ -415,6 +484,9 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     }
     assessment = analysis.get("flood_assessment", {})
     return to_json_safe({
+        "scenario_mode": request.scenario_mode,
+        "scenario_notice": "SYNTHETIC FLOOD DEMONSTRATION — not a real warning" if request.scenario_mode == "demo" else "Live environmental inputs; flood risk remains NOT_ASSESSED without verified official evidence.",
+        "communication_scenario": scenario.get("communication_status") if scenario else None,
         "region": {"id": region.get("id"), "name": region.get("name"), "river": region.get("river")},
         "weather": {
             "source": weather.get("source", "Open-Meteo"),
