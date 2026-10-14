@@ -221,7 +221,7 @@ class RunRequest(BaseModel):
     seed: int = 2026
     time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn: bool = False
-    scenario_mode: str = Field(default="demo", pattern="^(demo|live)$")
+    scenario_mode: str = Field(default="live", pattern="^live$")
 
 
 @app.get("/api/health")
