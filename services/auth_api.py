@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from services.auth_service import (SESSION_COOKIE,_connect,admin_snapshot,audit,authenticate,create_session,create_user,
  get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures,email_verification_required)
-from services.email_service import send_verification_email
+from services.email_service import send_email, send_verification_email
 router=APIRouter()
 class RegisterRequest(BaseModel):
     email:str=Field(min_length=3,max_length=254)
@@ -94,6 +94,41 @@ def admin_backend(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
       "Secrets and password hashes are never returned by this endpoint."]}
     audit("admin_view_backend",actor=admin); return result
 
+
+
+@router.get("/api/admin/alerts/status")
+def admin_alert_status(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
+    """Explain why real flood alerts are or are not currently eligible."""
+    from services.alert_monitor import monitor_configuration
+    from services.flood_state import _thresholds_verified
+    from services.auth_service import get_verified_alert_recipients
+    recipients=get_verified_alert_recipients()
+    result={
+      "monitor_enabled":monitor_configuration()["enabled"],
+      "monitor_interval_seconds":monitor_configuration()["interval_seconds"],
+      "smtp_configured":bool(os.getenv("FLOODAI_SMTP_USER") and os.getenv("FLOODAI_SMTP_APP_PASSWORD") and (os.getenv("FLOODAI_EMAIL_FROM") or os.getenv("FLOODAI_SMTP_USER"))),
+      "verified_alert_recipients":len(recipients),
+      "official_thresholds_verified":_thresholds_verified(),
+      "automatic_real_alerts_possible":False,
+      "reason":"Real alert emails remain disabled until verified official thresholds and fresh authoritative QC gauge evidence produce a complete WARNING/FLOOD/EMERGENCY assessment."
+    }
+    audit("admin_view_alert_status",actor=admin)
+    return result
+
+
+@router.post("/api/admin/email-test")
+def admin_email_test(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
+    """Send a clearly labelled SMTP test only to the signed-in admin."""
+    recipient=validate_email(admin["email"])
+    try:
+        send_email(recipient,"FloodAI SMTP test (not a flood alert)",
+                   "This is a FloodAI SMTP connectivity test requested from the Platform Admin dashboard. "
+                   "It is not a flood warning. No flood event was detected by this test.")
+    except Exception as exc:
+        audit("admin_smtp_test",actor=admin,outcome="failure",details=type(exc).__name__)
+        raise HTTPException(status_code=502,detail=f"SMTP test delivery failed ({type(exc).__name__}). Check container logs for details.") from exc
+    audit("admin_smtp_test",actor=admin,outcome="success",details="Test email sent to signed-in administrator")
+    return {"sent":True,"recipient":recipient,"message":"SMTP test email accepted for delivery to the administrator account. This is not a flood alert."}
 
 @router.post("/api/admin/pipeline")
 def admin_run_pipeline(payload: AdminPipelineRequest, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
