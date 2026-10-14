@@ -14,6 +14,11 @@ from services.weather_service import get_weather_data
 
 logger=logging.getLogger(__name__)
 
+def monitor_configuration()->dict[str,Any]:
+    enabled=os.getenv("FLOODAI_ALERT_MONITOR_ENABLED","false").strip().lower() in {"1","true","yes","on"}
+    interval=max(60,min(int(os.getenv("FLOODAI_ALERT_MONITOR_INTERVAL_SECONDS","300")),3600))
+    return {"enabled":enabled,"interval_seconds":interval}
+
 def check_region(region:dict[str,Any])->dict[str,Any]:
     """Fetch environmental evidence and dispatch only if the assessment passes every gate."""
     weather=get_weather_data(region["latitude"],region["longitude"],region.get("timezone","Asia/Kolkata"))
@@ -42,8 +47,9 @@ def _check_all_regions()->None:
     for region in regions:
         try:
             result=check_region(region)
-            logger.info("FloodAI alert monitor region=%s status=%s eligible=%s",
-                        result["region_id"],result["assessment_status"],result["alert"].get("eligible",False))
+            logger.info("FloodAI alert monitor region=%s status=%s eligible=%s sent=%s reason=%s",
+                        result["region_id"],result["assessment_status"],result["alert"].get("eligible",False),
+                        result["alert"].get("sent",0),result["alert"].get("reason","eligible"))
         except Exception:
             logger.exception("FloodAI alert monitor failed for region=%s",region.get("id","unknown"))
 
@@ -53,11 +59,11 @@ async def _monitor_loop(interval_seconds:int)->None:
         await asyncio.sleep(interval_seconds)
 
 def start_alert_monitor():
-    enabled=os.getenv("FLOODAI_ALERT_MONITOR_ENABLED","false").lower() in {"1","true","yes"}
-    if not enabled:
+    config=monitor_configuration()
+    if not config["enabled"]:
         logger.info("FloodAI automatic alert monitor is disabled.")
         return None
-    interval=max(60,min(int(os.getenv("FLOODAI_ALERT_MONITOR_INTERVAL_SECONDS","300")),3600))
+    interval=config["interval_seconds"]
     logger.info("Starting FloodAI alert monitor; interval=%s seconds.",interval)
     return asyncio.create_task(_monitor_loop(interval),name="floodai-alert-monitor")
 
