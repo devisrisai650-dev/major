@@ -1,13 +1,14 @@
 """Local REST API for the FloodAI regional simulation pipeline."""
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import Any
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,12 @@ from services.semantic_priority import (
     select_transmission_parameters,
 )
 from services.weather_service import get_weather_data
+from services.json_safe import to_json_safe
+from services.auth_api import router as auth_router
+from services.auth_service import get_user_from_request, init_db, require_user
+from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+
+_alert_monitor_task = None
 
 def _flood_dashboard(analysis, water, weather, discharge):
     assessment = analysis["flood_assessment"]
@@ -38,7 +45,6 @@ def _flood_dashboard(analysis, water, weather, discharge):
     ]
     severe = {"VERY_HIGH", "VERY_RAPIDLY_RISING"}
     elevated = {"HIGH", "RAPIDLY_RISING", "MODERATE"}
-    signal = "HIGH" if any(x in severe for x in classifications) else "ELEVATED" if any(x in elevated for x in classifications) else "LOW"
     readiness = {
         "thresholds_verified": not any("verified official" in item for item in missing),
         "fresh_qc_gauge": bool(gauge.get("available") and gauge.get("is_recent")),
@@ -46,6 +52,16 @@ def _flood_dashboard(analysis, water, weather, discharge):
         "complete_6h_rainfall_available": rainfall.get("last_6h_precipitation_mm") is not None,
         "assessment_ready": bool(assessment.get("complete")),
     }
+    # Never summarize incomplete evidence as a LOW flood signal. Indicators are
+    # descriptive only until official thresholds and fresh QC gauge evidence exist.
+    if not readiness["assessment_ready"]:
+        signal = "INCOMPLETE"
+    elif any(x in severe for x in classifications):
+        signal = "HIGH"
+    elif any(x in elevated for x in classifications):
+        signal = "ELEVATED"
+    else:
+        signal = "LOW"
     return {
         "assessment_status": assessment.get("status", "NOT_ASSESSED"),
         "assessment_state": assessment.get("state", "NOT_ASSESSED"),
@@ -117,7 +133,23 @@ app = FastAPI(
     title="FloodAI Local API",
     description="Environmental replay + semantic communication + software-only virtual RIS simulation.",
     version="1.1.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+
+app.include_router(auth_router)
+
+@app.on_event("startup")
+async def initialize_auth_database():
+    global _alert_monitor_task
+    init_db()
+    _alert_monitor_task = start_alert_monitor()
+
+@app.on_event("shutdown")
+async def shutdown_alert_monitor():
+    await stop_alert_monitor(_alert_monitor_task)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -160,16 +192,36 @@ async def prometheus_middleware(request, call_next):
     return response
 
 
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return FileResponse(Path(__file__).resolve().parent / "web" / "login.html")
+
 @app.get("/", include_in_schema=False)
-def homepage():
+def homepage(request: Request):
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] == "admin":
+        return RedirectResponse("/admin", status_code=303)
     return FileResponse(Path(__file__).resolve().parent / "web" / "index.html")
+
+@app.get("/admin", include_in_schema=False)
+def admin_page(request: Request):
+    admin = get_user_from_request(request)
+    if not admin:
+        return RedirectResponse("/login", status_code=303)
+    if admin["role"] != "admin":
+        return RedirectResponse("/", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "admin.html")
 
 
 class RunRequest(BaseModel):
     region_id: str = Field(min_length=1)
     communication_attempts: int = Field(default=5, ge=1, le=20)
     seed: int = 2026
+    time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn: bool = False
+    scenario_mode: str = Field(default="demo", pattern="^(demo|live)$")
 
 
 @app.get("/api/health")
@@ -188,7 +240,7 @@ def regions():
 
 
 @app.get("/api/regions/{region_id}")
-def region_detail(region_id: str):
+def region_detail(region_id: str, user: dict[str, Any] = Depends(require_user)):
     try:
         region = get_region(region_id)
     except ValueError as exc:
@@ -196,7 +248,6 @@ def region_detail(region_id: str):
     return {"region": region, "water_level_source": CsvReplayProvider().get_water_level(region)}
 
 
-@app.post("/api/run")
 def run_pipeline(request: RunRequest) -> dict[str, Any]:
     PIPELINE_RUNS.labels(request.region_id, str(request.learn).lower()).inc()
     try:
@@ -214,6 +265,22 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
         PIPELINE_ERRORS.labels("weather").inc()
         raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+
+    # Select the requested local hour for the weather card. Flood assessment still
+    # uses current observations and the verified-data gate; a forecast is not
+    # silently treated as a current gauge reading.
+    hourly_conditions = weather.get("hourly_conditions", [])
+    current_stamp = weather.get("current", {}).get("time")
+    if current_stamp and hourly_conditions:
+        selected_stamp = f"{current_stamp[:10]}T{request.time_of_day}"
+        selected = next(
+            (row for row in hourly_conditions if row.get("time") == selected_stamp),
+            None,
+        )
+        if selected is not None:
+            weather["selected_hour"] = selected
+        else:
+            weather["selected_hour"] = None
 
     discharge = get_discharge_analysis(region["latitude"], region["longitude"])
     water = CsvReplayProvider().get_water_level(region)
@@ -270,7 +337,7 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
     flood_dashboard = _flood_dashboard(analysis, water, weather, discharge)
     communication_kpis = _communication_kpis(transmission)
 
-    return {
+    return to_json_safe({
         "region": region,
         "weather": weather,
         "river_discharge": discharge,
@@ -310,4 +377,177 @@ def run_pipeline(request: RunRequest) -> dict[str, Any]:
             "flood_assessment": "NOT_ASSESSED is neither a flood warning nor an all-clear.",
             "communication": "SNR, latency, RIS and packet delivery are simulated.",
         },
+    })
+
+
+@app.post("/api/dashboard")
+def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
+    """Return flood and environmental information only; do not run research simulations."""
+    try:
+        region = get_region(request.region_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    try:
+        weather = get_weather_data(
+            region["latitude"],
+            region["longitude"],
+            region.get("timezone", "Asia/Kolkata"),
+        )
+    except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+
+    hourly_conditions = weather.get("hourly_conditions", [])
+    current_stamp = weather.get("current", {}).get("time")
+    if current_stamp and hourly_conditions:
+        selected_stamp = f"{current_stamp[:10]}T{request.time_of_day}"
+        weather["selected_hour"] = next(
+            (row for row in hourly_conditions if row.get("time") == selected_stamp),
+            None,
+        )
+
+    discharge = get_discharge_analysis(region["latitude"], region["longitude"])
+    water = CsvReplayProvider().get_water_level(region)
+    analysis = analyze_flood_state(weather, discharge, water)
+    scenario = None
+    if request.scenario_mode == "demo":
+        # Clearly labelled synthetic scenario: demonstration data must never be
+        # presented as an official warning or mixed silently with live gauge data.
+        scenario_path = Path(__file__).resolve().parent / "config" / "demo_flood_scenarios.csv"
+        try:
+            with scenario_path.open(newline="", encoding="utf-8") as handle:
+                scenario = next(
+                    row for row in csv.DictReader(handle)
+                    if row["region_id"] == region["id"] and row["hour"] == request.time_of_day
+                )
+        except (OSError, StopIteration, KeyError) as exc:
+            raise HTTPException(status_code=500, detail="Demo scenario dataset is missing a selected region/time row.") from exc
+
+        rain = float(scenario["rainfall_mm_per_hour"])
+        rain6 = float(scenario["rainfall_6h_mm"])
+        rain24 = float(scenario["rainfall_24h_mm"])
+        rise = float(scenario["water_level_rise_m_per_hour"])
+        level = float(scenario["water_level_m"])
+        demo_discharge = float(scenario["river_discharge_m3s"])
+        weather["source"] = "Open-Meteo weather + synthetic flood demo rainfall"
+        weather.setdefault("current", {})["rain_mm"] = rain
+        if weather.get("selected_hour") is not None:
+            weather["selected_hour"] = dict(weather["selected_hour"])
+            weather["selected_hour"]["rain_mm"] = rain
+            weather["selected_hour"]["precipitation_mm"] = rain
+            weather["selected_hour"]["source_type"] = "synthetic_demo"
+        weather["rainfall_windows"] = {
+            "last_1h_precipitation_mm": rain,
+            "last_3h_precipitation_mm": rain * 3,
+            "last_6h_precipitation_mm": rain6,
+            "last_24h_precipitation_mm": rain24,
+        }
+        analysis["rainfall"] = {
+            "current_rain_mm": rain,
+            "classification": "VERY_HIGH" if rain >= 20 else "HIGH" if rain >= 10 else "LOW",
+            "last_1h_precipitation_mm": rain,
+            "last_3h_precipitation_mm": rain * 3,
+            "last_6h_precipitation_mm": rain6,
+            "last_24h_precipitation_mm": rain24,
+            "source": "synthetic demonstration dataset",
+        }
+        discharge = {
+            "discharge_m3s": demo_discharge, "available": True,
+            "time": request.time_of_day, "data_type": "synthetic_demo",
+            "reason": "Synthetic demonstration value; not a live gauge measurement.",
+        }
+        analysis["river"] = {
+            "discharge_m3s": demo_discharge, "available": True,
+            "data_type": "synthetic_demo", "time": request.time_of_day,
+            "classification": "HIGH" if demo_discharge >= 100 else "MODERATE",
+            "reason": "Synthetic demonstration value; not a live gauge measurement.",
+        }
+        water.update({
+            "available": True, "is_recent": True, "current_level_m": level,
+            "latest_observed_m": level, "current_time": request.time_of_day,
+            "age_hours": 0.0, "rate_of_change_m_per_hour": rise,
+            "station": "SYNTHETIC_DEMO", "reason": "Synthetic scenario value; not an official gauge reading.",
+        })
+        analysis["water_level"] = {
+            "available": True, "current_m": level, "latest_observed_m": level,
+            "rate_of_change_m_per_hour": rise,
+            "classification": "VERY_RAPIDLY_RISING" if rise >= 0.2 else "RAPIDLY_RISING" if rise >= 0.1 else "RISING",
+            "station": "SYNTHETIC_DEMO", "observation_time": request.time_of_day,
+            "age_hours": 0.0, "reason": "Synthetic demonstration value; not an official gauge reading.",
+        }
+        analysis["flood_assessment"] = {
+            "status": "DEMO_FLOOD_SCENARIO", "state": "DEMO_FLOOD_SCENARIO",
+            "score": None, "complete": False,
+            "reason": "SIMULATED FLOOD DEMONSTRATION ONLY. Synthetic data is not a real flood warning or an all-clear.",
+            "missing_or_unconfigured": ["synthetic demonstration; official thresholds and live QC gauge evidence are not applied"],
+        }
+    flood = _flood_dashboard(analysis, water, weather, discharge)
+    if scenario is not None:
+        flood["assessment_status"] = "DEMO_FLOOD_SCENARIO"
+        flood["environmental_signal"] = "HIGH" if scenario["communication_status"] == "PARTIAL_OUTAGE" else "ELEVATED" if scenario["communication_status"] == "DEGRADED" else "LOW"
+        flood["message"] = "SIMULATED FLOOD DEMONSTRATION ONLY — synthetic rainfall and gauge values are not real-world warnings."
+        flood["readiness"]["assessment_ready"] = False
+    indicators = {
+        "rainfall": analysis.get("rainfall", {}),
+        "river": analysis.get("river", {}),
+        "water_level": analysis.get("water_level", {}),
     }
+    assessment = analysis.get("flood_assessment", {})
+    return to_json_safe({
+        "scenario_mode": request.scenario_mode,
+        "scenario_notice": "SYNTHETIC FLOOD DEMONSTRATION — not a real warning" if request.scenario_mode == "demo" else "Live environmental inputs; flood risk remains NOT_ASSESSED without verified official evidence.",
+        "communication_scenario": scenario.get("communication_status") if scenario else None,
+        "region": {"id": region.get("id"), "name": region.get("name"), "river": region.get("river")},
+        "weather": {
+            "source": weather.get("source", "Open-Meteo"),
+            "current": weather.get("current", {}),
+            "selected_hour": weather.get("selected_hour"),
+        },
+        "river_discharge": {
+            "available": discharge.get("available", False),
+            "discharge_m3s": discharge.get("discharge_m3s"),
+            "time": discharge.get("time"),
+            "reason": discharge.get("reason"),
+        },
+        "water_level": {
+            "available": water.get("available", False),
+            "current_level_m": water.get("current_level_m"),
+            "latest_observed_m": water.get("latest_observed_m"),
+            "current_time": water.get("current_time"),
+            "age_hours": water.get("age_hours"),
+            "station": water.get("station"),
+            "reason": water.get("reason"),
+        },
+        "flood_assessment": {
+            "status": assessment.get("status", "NOT_ASSESSED"),
+            "state": assessment.get("state", "NOT_ASSESSED"),
+            "complete": assessment.get("complete", False),
+            "reason": assessment.get("reason"),
+        },
+        "flood_dashboard": {
+            "assessment_status": flood.get("assessment_status", "NOT_ASSESSED"),
+            "environmental_signal": flood.get("environmental_signal", "UNKNOWN"),
+            "message": flood.get("message"),
+            "readiness": {"assessment_ready": flood.get("readiness", {}).get("assessment_ready", False)},
+        },
+        "flood_indicators": {
+            "rainfall": {
+                "classification": indicators["rainfall"].get("classification"),
+                "current_rain_mm": indicators["rainfall"].get("current_rain_mm"),
+                "last_6h_precipitation_mm": indicators["rainfall"].get("last_6h_precipitation_mm"),
+                "last_24h_precipitation_mm": indicators["rainfall"].get("last_24h_precipitation_mm"),
+            },
+            "river": {
+                "classification": indicators["river"].get("classification"),
+                "available": indicators["river"].get("available", False),
+                "discharge_m3s": indicators["river"].get("discharge_m3s"),
+            },
+            "water_level": {
+                "classification": indicators["water_level"].get("classification"),
+                "available": indicators["water_level"].get("available", False),
+                "current_m": indicators["water_level"].get("current_m"),
+                "rate_of_change_m_per_hour": indicators["water_level"].get("rate_of_change_m_per_hour"),
+            },
+        },
+    })
+

@@ -6,6 +6,19 @@ services:
       - "8000:8000"
     environment:
       FLOODAI_ENV: docker
+      FLOODAI_AUTH_DB: /app/data/floodai_auth.sqlite3
+      FLOODAI_ADMIN_EMAIL: ${FLOODAI_ADMIN_EMAIL:-}
+      FLOODAI_ADMIN_PASSWORD: ${FLOODAI_ADMIN_PASSWORD:-}
+      FLOODAI_EMAIL_VERIFICATION_REQUIRED: ${FLOODAI_EMAIL_VERIFICATION_REQUIRED:-false}
+      FLOODAI_SMTP_USER: ${FLOODAI_SMTP_USER:-}
+      FLOODAI_SMTP_APP_PASSWORD: ${FLOODAI_SMTP_APP_PASSWORD:-}
+      FLOODAI_EMAIL_FROM: ${FLOODAI_EMAIL_FROM:-}
+      FLOODAI_BASE_URL: ${FLOODAI_BASE_URL:-http://localhost:8000}
+      FLOODAI_COOKIE_SECURE: ${FLOODAI_COOKIE_SECURE:-false}
+      FLOODAI_ALERT_MONITOR_ENABLED: ${FLOODAI_ALERT_MONITOR_ENABLED:-true}
+      FLOODAI_ALERT_MONITOR_INTERVAL_SECONDS: ${FLOODAI_ALERT_MONITOR_INTERVAL_SECONDS:-300}
+    volumes:
+      - floodai_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
@@ -18,7 +31,7 @@ services:
     image: prom/prometheus:v3.5.0
     container_name: floodai-prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
@@ -30,9 +43,12 @@ services:
     image: grafana/grafana:12.1.1
     container_name: floodai-grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
     restart: unless-stopped
+
+volumes:
+  floodai_data:

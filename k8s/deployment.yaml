@@ -6,7 +6,7 @@ metadata:
   labels:
     app: floodai-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: floodai-api
@@ -15,6 +15,10 @@ spec:
       labels:
         app: floodai-api
     spec:
+      volumes:
+        - name: auth-data
+          persistentVolumeClaim:
+            claimName: floodai-auth-data
       containers:
         - name: floodai-api
           image: floodai-api:latest
@@ -25,6 +29,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: floodai-api-config
+            - secretRef:
+                name: floodai-auth-secrets
+                optional: true
+          volumeMounts:
+            - name: auth-data
+              mountPath: /app/data
           readinessProbe:
             httpGet:
               path: /api/health

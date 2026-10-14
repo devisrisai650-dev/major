@@ -7,3 +7,10 @@ __pycache__
 *.pyc
 outputs/*.csv
 outputs/*.png
+
+.env
+.env.*
+!.env.example
+data/*.sqlite3
+data/*.db
+.venv-1

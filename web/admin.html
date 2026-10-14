@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FloodAI · Platform Administration</title>
+<style>
+:root{color-scheme:dark;--bg:#071219;--panel:#0e2029;--line:#294652;--text:#edf7f8;--muted:#9ab2bb;--teal:#55d6bd;--amber:#ffd071;--red:#ff8d84;--green:#8ce0b4}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif}header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px max(4%,calc((100% - 1380px)/2));border-bottom:1px solid var(--line);background:#091820}h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}h3{font-size:14px;margin:0 0 8px}.muted{color:var(--muted)}main{max-width:1380px;margin:auto;padding:24px 4%}.actions,.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,input,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:#142b35;color:var(--text)}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}button.primary{background:var(--teal);color:#06231f;border-color:var(--teal);font-weight:750}.notice{padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin:0 0 16px;background:var(--panel)}.notice.error{border-color:var(--red);color:var(--red)}.notice.ok{border-color:#327d61;color:var(--green)}.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px}.panel,.stat{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--panel);margin-bottom:14px;min-width:0}.stat span{display:block;color:var(--muted);font-size:12px}.stat b{display:block;font-size:25px;margin-top:6px;overflow-wrap:anywhere}.status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid var(--line);padding:4px 9px;font-size:12px}.status:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.status.good{color:var(--green)}.status.warn{color:var(--amber)}.status.bad{color:var(--red)}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px;min-width:650px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}td{overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#071920;border-radius:8px;padding:12px;font-size:12px}.toolbar input{min-width:220px}.empty{color:var(--muted);padding:18px;text-align:center}.small{font-size:12px}.section-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}@media(max-width:950px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:600px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:flex-start;flex-direction:column}main{padding:16px 12px}.stat b{font-size:21px}}
+</style>
+</head>
+<body>
+<header><div><h1>FloodAI · Platform Administration</h1><div id="who" class="muted">Verifying administrator session…</div></div><div class="actions"><button id="refresh" class="primary">Refresh data</button><button onclick="location.href='/'">User dashboard</button><button id="logout">Sign out</button></div></header>
+<main>
+<div id="message" class="notice" role="status">Loading platform status…</div>
+<section class="grid" aria-label="Platform metrics">
+<div class="stat"><span>Registered users</span><b id="users">—</b><small class="muted" id="users-note">Regular accounts</small></div>
+<div class="stat"><span>Verified users</span><b id="verified">—</b><small class="muted">Email verification status</small></div>
+<div class="stat"><span>Active sessions</span><b id="sessions">—</b><small class="muted">Unexpired sessions</small></div>
+<div class="stat"><span>Platform admins</span><b id="admins">—</b><small class="muted">Provisioned administrator accounts</small></div>
+<div class="stat"><span>Alert dispatches</span><b id="alerts">—</b><small class="muted">Records with recipients</small></div>
+</section>
+<section class="panel">
+<div class="section-head"><h2>Platform health</h2><span id="health-badge" class="status warn">Checking</span></div>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+<div><h3>API service</h3><div id="api-health" class="muted">Checking…</div></div>
+<div><h3>Authentication database</h3><div id="db-health" class="muted">Checking…</div></div>
+<div><h3>Email configuration</h3><div id="smtp-health" class="muted">Checking…</div></div>
+<div><h3>Admin bootstrap</h3><div id="admin-health" class="muted">Checking…</div></div>
+</div>
+<p class="muted small">The platform health view reports service/configuration status only. It does not certify flood-risk accuracy. Synthetic channel, RIS-CNOMA and DRL outputs are simulations.</p>
+</section>
+<section class="panel">
+<div class="section-head"><h2>User account management</h2><div class="toolbar"><input id="user-search" type="search" placeholder="Filter by email, ID or status" aria-label="Filter users"><span class="muted small" id="user-count">Loading users…</span></div></div>
+<div class="tablewrap"><table><thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Verified</th><th>Alert preference</th><th>Account</th><th>Created</th><th>Action</th></tr></thead><tbody id="user-rows"><tr><td colspan="8" class="empty">Loading accounts…</td></tr></tbody></table></div>
+<p class="muted small">Disabling a regular account also revokes its active sessions. The admin account cannot be disabled here.</p>
+</section>
+<section class="panel">
+<div class="section-head"><h2>Recent audit activity</h2><span class="muted small">Latest 20 recorded events</span></div>
+<div class="tablewrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6" class="empty">Loading activity…</td></tr></tbody></table></div>
+</section>
+<section class="panel">
+<div class="section-head"><h2>Email notifications</h2><button id="test-email">Send SMTP test to my admin email</button></div>
+<p id="alert-status" class="muted">Checking notification readiness…</p>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+<div><h3>Alert monitor</h3><div id="monitor-status" class="muted">—</div></div>
+<div><h3>SMTP settings</h3><div id="smtp-alert-status" class="muted">—</div></div>
+<div><h3>Eligible recipients</h3><div id="recipient-status" class="muted">—</div></div>
+<div><h3>Official thresholds</h3><div id="threshold-status" class="muted">—</div></div>
+</div>
+<p class="muted small">The SMTP test is a connectivity test sent only to the signed-in administrator. Real flood emails remain gated until the system has a complete authoritative assessment, verified official station thresholds, and fresh quality-controlled gauge evidence. Synthetic demo scenarios never trigger real flood-warning emails.</p>
+</section>
+<section class="panel"><div class="section-head"><h2>Safe configuration summary</h2><span class="muted small">Secrets are never displayed</span></div><pre id="backend">Loading configuration…</pre></section>
+<footer class="muted small">FloodAI Platform Admin · Access is enforced by server-side role checks. Never treat a demo scenario or incomplete evidence as a real flood warning.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let allUsers=[];
+async function api(url,options={}) {
+ const response=await fetch(url,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});
+ let data={};try{data=await response.json()}catch{}
+ if(!response.ok){const error=new Error(data.detail||("Request failed ("+response.status+")"));error.status=response.status;throw error}
+ return data;
+}
+function setMessage(text,kind=""){const el=$("message");el.textContent=text;el.className="notice"+(kind?" "+kind:"")}
+function setStatus(id,text,kind){const el=$(id);el.textContent=text;el.className="status "+kind}
+function cell(row,value){const td=document.createElement("td");td.textContent=value===null||value===undefined||value===""?"—":String(value);row.appendChild(td);return td}
+function emptyRow(body,cols,message){const tr=document.createElement("tr");const td=cell(tr,message);td.colSpan=cols;td.className="empty";body.replaceChildren(tr)}
+function renderUsers(users){
+ const query=$("user-search").value.trim().toLowerCase();
+ const filtered=users.filter(u=>[u.id,u.email,u.role,u.is_verified?"verified":"unverified",u.is_active?"active":"disabled",u.alerts_enabled?"alerts on":"alerts off"].join(" ").toLowerCase().includes(query));
+ const body=$("user-rows");body.replaceChildren();$("user-count").textContent=filtered.length+" of "+users.length+" accounts";
+ if(!filtered.length){emptyRow(body,8,"No accounts match this filter.");return}
+ for(const u of filtered){
+  const tr=document.createElement("tr");cell(tr,u.id);cell(tr,u.email);cell(tr,u.role);
+  cell(tr,u.is_verified?"Verified":"Not verified");cell(tr,u.alerts_enabled?"Enabled":"Off");cell(tr,u.is_active?"Active":"Disabled");cell(tr,u.created_at);
+  const td=cell(tr,"");
+  if(u.role==="user"){
+   const button=document.createElement("button");button.textContent=u.is_active?"Disable account":"Enable account";button.disabled=false;
+   button.onclick=async()=>{button.disabled=true;try{await api("/api/admin/users/"+encodeURIComponent(u.id)+"/status",{method:"PATCH",body:JSON.stringify({active:!u.is_active})});setMessage("Account "+(u.is_active?"disabled":"enabled")+" successfully.","ok");await loadData()}catch(e){setMessage("Could not update account: "+e.message,"error");button.disabled=false}};
+   td.appendChild(button);
+  }else td.textContent="Protected admin";
+  body.appendChild(tr);
+ }
+}
+function renderAudit(items){
+ const body=$("audit-rows");body.replaceChildren();
+ if(!items?.length){emptyRow(body,6,"No audit activity has been recorded yet.");return}
+ for(const a of items){const tr=document.createElement("tr");cell(tr,a.created_at);cell(tr,a.actor_email);cell(tr,a.action);cell(tr,a.target);cell(tr,a.outcome);cell(tr,a.details);body.appendChild(tr)}
+}
+async function loadData(){
+ $("refresh").disabled=true;setMessage("Refreshing platform data…");
+ const failures=[];
+ try{
+  const me=await api("/api/auth/me");
+  if(me.user?.role!=="admin"){location.replace("/");return}
+  $("who").textContent=me.user.email+" · administrator session verified";
+ }catch(e){if(e.status===401||e.status===403){location.replace("/login");return}setMessage("Unable to verify administrator session: "+e.message,"error");$("refresh").disabled=false;return}
+ const tasks=[
+  ["overview",()=>api("/api/admin/overview")],
+  ["backend",()=>api("/api/admin/backend")],
+  ["users",()=>api("/api/admin/users")],
+  ["health",()=>api("/api/health")],
+  ["alertStatus",()=>api("/api/admin/alerts/status")]
+ ];
+ const values={};
+ await Promise.all(tasks.map(async([key,fn])=>{try{values[key]=await fn()}catch(e){failures.push(key+": "+e.message)}}));
+ if(values.overview){
+  const c=values.overview.counts||{};$("users").textContent=c.users_total??"—";$("verified").textContent=c.users_verified??"—";$("sessions").textContent=c.active_sessions??"—";$("admins").textContent=c.admins??"—";$("alerts").textContent=c.alerts_sent??"—";
+  renderAudit(values.overview.recent_activity||[]);
+ }else emptyRow($("audit-rows"),6,"Audit endpoint unavailable.");
+ if(values.users){allUsers=values.users.users||[];renderUsers(allUsers)}else emptyRow($("user-rows"),8,"User list unavailable.");
+ if(values.backend){
+  const b=values.backend;
+  $("db-health").textContent=b.auth_database==="sqlite"?"SQLite configured":"Not confirmed";
+  $("smtp-health").textContent=b.smtp_configured?"SMTP credentials configured":"SMTP not configured";
+  $("admin-health").textContent=b.admin_bootstrap_configured?"Bootstrap credentials configured":"Check admin environment configuration";
+  $("backend").textContent=JSON.stringify(b,null,2);
+ }else{$("backend").textContent="Backend configuration endpoint unavailable."; $("db-health").textContent="Unavailable";$("smtp-health").textContent="Unavailable";$("admin-health").textContent="Unavailable"}
+ if(values.health){$("api-health").textContent=values.health.status==="ok"?"Healthy · "+values.health.service:"Responded · "+(values.health.status||"unknown")}else $("api-health").textContent="Health endpoint unavailable";
+ if(values.alertStatus){
+  const a=values.alertStatus;
+  $("monitor-status").textContent=a.monitor_enabled?"Enabled · every "+a.monitor_interval_seconds+" seconds":"Disabled";
+  $("smtp-alert-status").textContent=a.smtp_configured?"Credentials configured":"Not configured";
+  $("recipient-status").textContent=String(a.verified_alert_recipients);
+  $("threshold-status").textContent=a.official_thresholds_verified?"Configured as verified":"Not verified";
+  $("alert-status").textContent=a.reason;
+ }else{$("alert-status").textContent="Alert status endpoint unavailable."; $("monitor-status").textContent="Unavailable";$("smtp-alert-status").textContent="Unavailable";$("recipient-status").textContent="Unavailable";$("threshold-status").textContent="Unavailable"}
+ if(!failures.length){setStatus("health-badge","Services responding","good");setMessage("Administrator session verified. Platform metrics, account management, and audit log refreshed.","ok")}
+ else{setStatus("health-badge","Partial data","warn");setMessage("Some admin data could not load: "+failures.join(" · "),"error")}
+ $("refresh").disabled=false;
+}
+$("test-email").addEventListener("click",async()=>{const b=$("test-email");b.disabled=true;setMessage("Sending SMTP test to the signed-in administrator…");try{const result=await api("/api/admin/email-test",{method:"POST",body:"{}"});setMessage(result.message+" Recipient: "+result.recipient,"ok")}catch(e){setMessage("SMTP test failed: "+e.message,"error")}finally{b.disabled=false}});
+$("user-search").addEventListener("input",()=>renderUsers(allUsers));
+$("refresh").addEventListener("click",loadData);
+$("logout").addEventListener("click",async()=>{ $("logout").disabled=true;try{await api("/api/auth/logout",{method:"POST"})}catch(e){}location.replace("/login")});
+loadData();
+</script>
+</body></html>
