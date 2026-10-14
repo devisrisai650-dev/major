@@ -105,3 +105,34 @@ def test_login_attempts_are_throttled_and_cleared_after_success(monkeypatch, tmp
     assert auth_service.login_is_locked(key) is True
     auth_service.clear_login_failures(key)
     assert auth_service.login_is_locked(key) is False
+
+
+def test_environmental_indicator_emails_for_moderate_high_and_deduplicates(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    user_id, token = auth_service.create_user("indicator@gmail.com", "a-long-user-password")
+    assert user_id > 0
+    assert auth_service.verify_email_token(token)
+    sent = []
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email",
+                        lambda recipient, **kwargs: sent.append((recipient, kwargs["level"])))
+    args = dict(region_id="region_001", region_name="Kakinada", level="HIGH",
+                event_id="HIGH:2026-10-14T12:00", observed_at="2026-10-14T12:00",
+                source="Open-Meteo live weather data", indicators="current rainfall=12 mm")
+    first = alert_service.dispatch_environmental_indicator_alert(**args)
+    second = alert_service.dispatch_environmental_indicator_alert(**args)
+    assert first["sent"] == 1
+    assert second["duplicate"] is True
+    assert sent == [("indicator@gmail.com", "HIGH")]
+
+
+def test_environmental_indicator_email_rejects_low_level(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    sent = []
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email",
+                        lambda *args, **kwargs: sent.append(True))
+    result = alert_service.dispatch_environmental_indicator_alert(
+        region_id="region_001", region_name="Kakinada", level="LOW",
+        event_id="low-event", observed_at="2026-10-14T12:00",
+        source="Open-Meteo", indicators="rainfall=0 mm")
+    assert result["eligible"] is False
+    assert sent == []
