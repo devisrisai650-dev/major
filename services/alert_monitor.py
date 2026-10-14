@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 from typing import Any
-from services.alert_service import dispatch_verified_flood_alert
+from services.alert_service import dispatch_environmental_indicator_alert,dispatch_verified_flood_alert
 from services.flood_api import get_discharge_analysis
 from services.flood_state import analyze_flood_state
 from services.gauge_provider import CsvReplayProvider
@@ -35,8 +35,21 @@ def check_region(region:dict[str,Any])->dict[str,Any]:
     }
     result=dispatch_verified_flood_alert(region_id=str(region["id"]),region_name=str(region["name"]),
                                           assessment=assessment,evidence=evidence)
+    rain=analysis.get("rainfall",{})
+    rain_class=str(rain.get("classification","UNKNOWN")).upper()
+    # This separate email is an advisory about live environmental indicators,
+    # not a claim of an official flood warning. Synthetic dashboard data is not used here.
+    indicator_result={"sent":0,"eligible":False,"reason":"No moderate/high live rainfall indicator."}
+    if rain_class in {"MODERATE","HIGH","VERY_HIGH"}:
+        level="MODERATE" if rain_class=="MODERATE" else "HIGH"
+        observed_at=str(weather.get("current",{}).get("time") or analysis.get("timestamp") or "")
+        indicator_result=dispatch_environmental_indicator_alert(
+            region_id=str(region["id"]),region_name=str(region["name"]),level=level,
+            event_id=f"{level}:{observed_at}",observed_at=observed_at,
+            source="Open-Meteo live weather data",
+            indicators=f"current rainfall={rain.get('current_rain_mm')} mm; 6-hour rainfall={rain.get('last_6h_precipitation_mm')} mm")
     return {"region_id":region["id"],"assessment_status":assessment.get("status","NOT_ASSESSED"),
-            "alert":result}
+            "alert":result,"environmental_indicator_email":indicator_result}
 
 def _check_all_regions()->None:
     try:
