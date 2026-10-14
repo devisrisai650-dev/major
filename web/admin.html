@@ -38,6 +38,17 @@
 <div class="section-head"><h2>Recent audit activity</h2><span class="muted small">Latest 20 recorded events</span></div>
 <div class="tablewrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6" class="empty">Loading activity…</td></tr></tbody></table></div>
 </section>
+<section class="panel">
+<div class="section-head"><h2>Email notifications</h2><button id="test-email">Send SMTP test to my admin email</button></div>
+<p id="alert-status" class="muted">Checking notification readiness…</p>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+<div><h3>Alert monitor</h3><div id="monitor-status" class="muted">—</div></div>
+<div><h3>SMTP settings</h3><div id="smtp-alert-status" class="muted">—</div></div>
+<div><h3>Eligible recipients</h3><div id="recipient-status" class="muted">—</div></div>
+<div><h3>Official thresholds</h3><div id="threshold-status" class="muted">—</div></div>
+</div>
+<p class="muted small">The SMTP test is a connectivity test sent only to the signed-in administrator. Real flood emails remain gated until the system has a complete authoritative assessment, verified official station thresholds, and fresh quality-controlled gauge evidence. Synthetic demo scenarios never trigger real flood-warning emails.</p>
+</section>
 <section class="panel"><div class="section-head"><h2>Safe configuration summary</h2><span class="muted small">Secrets are never displayed</span></div><pre id="backend">Loading configuration…</pre></section>
 <footer class="muted small">FloodAI Platform Admin · Access is enforced by server-side role checks. Never treat a demo scenario or incomplete evidence as a real flood warning.</footer>
 </main>
@@ -88,7 +99,8 @@ async function loadData(){
   ["overview",()=>api("/api/admin/overview")],
   ["backend",()=>api("/api/admin/backend")],
   ["users",()=>api("/api/admin/users")],
-  ["health",()=>api("/api/health")]
+  ["health",()=>api("/api/health")],
+  ["alertStatus",()=>api("/api/admin/alerts/status")]
  ];
  const values={};
  await Promise.all(tasks.map(async([key,fn])=>{try{values[key]=await fn()}catch(e){failures.push(key+": "+e.message)}}));
@@ -105,10 +117,19 @@ async function loadData(){
   $("backend").textContent=JSON.stringify(b,null,2);
  }else{$("backend").textContent="Backend configuration endpoint unavailable."; $("db-health").textContent="Unavailable";$("smtp-health").textContent="Unavailable";$("admin-health").textContent="Unavailable"}
  if(values.health){$("api-health").textContent=values.health.status==="ok"?"Healthy · "+values.health.service:"Responded · "+(values.health.status||"unknown")}else $("api-health").textContent="Health endpoint unavailable";
+ if(values.alertStatus){
+  const a=values.alertStatus;
+  $("monitor-status").textContent=a.monitor_enabled?"Enabled · every "+a.monitor_interval_seconds+" seconds":"Disabled";
+  $("smtp-alert-status").textContent=a.smtp_configured?"Credentials configured":"Not configured";
+  $("recipient-status").textContent=String(a.verified_alert_recipients);
+  $("threshold-status").textContent=a.official_thresholds_verified?"Configured as verified":"Not verified";
+  $("alert-status").textContent=a.reason;
+ }else{$("alert-status").textContent="Alert status endpoint unavailable."; $("monitor-status").textContent="Unavailable";$("smtp-alert-status").textContent="Unavailable";$("recipient-status").textContent="Unavailable";$("threshold-status").textContent="Unavailable"}
  if(!failures.length){setStatus("health-badge","Services responding","good");setMessage("Administrator session verified. Platform metrics, account management, and audit log refreshed.","ok")}
  else{setStatus("health-badge","Partial data","warn");setMessage("Some admin data could not load: "+failures.join(" · "),"error")}
  $("refresh").disabled=false;
 }
+$("test-email").addEventListener("click",async()=>{const b=$("test-email");b.disabled=true;setMessage("Sending SMTP test to the signed-in administrator…");try{const result=await api("/api/admin/email-test",{method:"POST",body:"{}"});setMessage(result.message+" Recipient: "+result.recipient,"ok")}catch(e){setMessage("SMTP test failed: "+e.message,"error")}finally{b.disabled=false}});
 $("user-search").addEventListener("input",()=>renderUsers(allUsers));
 $("refresh").addEventListener("click",loadData);
 $("logout").addEventListener("click",async()=>{ $("logout").disabled=true;try{await api("/api/auth/logout",{method:"POST"})}catch(e){}location.replace("/login")});
