@@ -140,6 +140,11 @@ app = FastAPI(
 
 app.include_router(auth_router)
 
+# User-facing scenario playback uses synthetic values only and keeps real flood
+# assessment explicitly NOT_ASSESSED. Scenario communications are simulations.
+from services.scenario_api import router as scenario_router
+app.include_router(scenario_router)
+
 @app.on_event("startup")
 async def initialize_auth_database():
     global _alert_monitor_task
