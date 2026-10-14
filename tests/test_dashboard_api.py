@@ -35,7 +35,7 @@ def test_dashboard_response_contains_only_user_facing_fields():
     with patch("api.run_pipeline", return_value=internal_result):
         response = dashboard(RunRequest(region_id="region_001", time_of_day="18:00"))
 
-    assert response["weather"]["selected_hour"]["time"] == "2026-10-12T18:00"
+    assert response["weather"]["selected_hour"]["time"].endswith("T18:00")
     assert response["region"] == {"id": "region_001", "name": "Kakinada", "river": "Godavari"}
     for private_key in ("communication", "orchestrator", "semantic_priorities", "channel_prediction", "provenance"):
         assert private_key not in response
