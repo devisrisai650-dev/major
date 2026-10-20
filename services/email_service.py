@@ -32,9 +32,9 @@ def send_flood_alert(recipient,*,region,status,observed_at,source,message):
 def send_environmental_indicator_email(recipient,*,region,level,observed_at,source,indicators):
     """Send a clearly labelled advisory email, never an official flood warning."""
     body=(
-        f"FloodAI environmental indicator notice for {region}\\n\\n"
-        f"Indicator level: {level}\\nObservation time: {observed_at}\\nSource: {source}\\n"
-        f"Indicators: {indicators}\\n\\n"
+        f"FloodAI environmental indicator notice for {region}\n\n"
+        f"Indicator level: {level}\nObservation time: {observed_at}\nSource: {source}\n"
+        f"Indicators: {indicators}\n\n"
         "This is an automated environmental indicator based on available live data, not an official flood warning or all-clear. "
         "Flood risk remains NOT_ASSESSED unless verified official station thresholds and fresh quality-controlled gauge evidence are available. "
         "Follow local disaster-management authorities for emergency instructions."

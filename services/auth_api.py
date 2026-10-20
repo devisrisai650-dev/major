@@ -2,13 +2,15 @@
 # ruff: noqa: E401, E701, E702
 from __future__ import annotations
 import hashlib
+import logging
 import os
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from services.auth_service import (SESSION_COOKIE,_connect,admin_snapshot,audit,authenticate,create_session,create_user,
- get_user_from_request,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures,email_verification_required)
+ get_user_from_request,list_alert_dispatches,list_users,require_admin,require_user,revoke_session,set_alerts_enabled,set_user_active,verify_email_token,validate_email,login_is_locked,record_login_failure,clear_login_failures,email_verification_required)
 from services.email_service import send_email, send_verification_email
+logger=logging.getLogger(__name__)
 router=APIRouter()
 class RegisterRequest(BaseModel):
     email:str=Field(min_length=3,max_length=254)
@@ -32,7 +34,9 @@ def register(payload:RegisterRequest,request:Request)->dict[str,Any]:
     sent=False
     if verification_required:
         try: send_verification_email(validate_email(payload.email),token); sent=True
-        except Exception: audit("verification_email_failed",target=str(uid),outcome="failure")
+        except Exception as exc:
+            logger.exception("Verification email could not be sent.")
+            audit("verification_email_failed",target=str(uid),outcome="failure",details=f"{type(exc).__name__}: {str(exc)[:200]}")
     audit("user_registered",target=str(uid),details=f"ip={request.client.host if request.client else 'unknown'}")
     message="Account created. You can sign in now." if not verification_required else "Account created. Verify your email before signing in."
     return {"message":message,"verification_required":verification_required,"verification_email_sent":sent}
@@ -99,7 +103,7 @@ def admin_backend(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
 @router.get("/api/admin/alerts/status")
 def admin_alert_status(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
     """Explain why real flood alerts are or are not currently eligible."""
-    from services.alert_monitor import monitor_configuration
+    from services.alert_monitor import monitor_configuration, monitor_state
     from services.flood_state import _thresholds_verified
     from services.auth_service import get_verified_alert_recipients
     recipients=get_verified_alert_recipients()
@@ -110,10 +114,17 @@ def admin_alert_status(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any
       "verified_alert_recipients":len(recipients),
       "official_thresholds_verified":_thresholds_verified(),
       "automatic_real_alerts_possible":False,
-      "reason":"Real alert emails remain disabled until verified official thresholds and fresh authoritative QC gauge evidence produce a complete WARNING/FLOOD/EMERGENCY assessment."
+      "reason":"Real alert emails remain disabled until verified official thresholds and fresh authoritative QC gauge evidence produce a complete WARNING/FLOOD/EMERGENCY assessment.",
+      "monitor_last_run":monitor_state(),
     }
     audit("admin_view_alert_status",actor=admin)
     return result
+
+@router.get("/api/admin/alerts/history")
+def admin_alert_history(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
+    """Recent alert dispatch records (official alerts and environmental indicator notices)."""
+    audit("admin_view_alert_history",actor=admin)
+    return {"dispatches":list_alert_dispatches(50)}
 
 
 @router.post("/api/admin/email-test")
@@ -126,7 +137,8 @@ def admin_email_test(admin:dict[str,Any]=Depends(require_admin))->dict[str,Any]:
                    "It is not a flood warning. No flood event was detected by this test.")
     except Exception as exc:
         audit("admin_smtp_test",actor=admin,outcome="failure",details=type(exc).__name__)
-        raise HTTPException(status_code=502,detail=f"SMTP test delivery failed ({type(exc).__name__}). Check container logs for details.") from exc
+        logger.exception("Admin SMTP test failed.")
+        raise HTTPException(status_code=502,detail=f"SMTP test delivery failed: {type(exc).__name__}: {str(exc)[:200]}") from exc
     audit("admin_smtp_test",actor=admin,outcome="success",details="Test email sent to signed-in administrator")
     return {"sent":True,"recipient":recipient,"message":"SMTP test email accepted for delivery to the administrator account. This is not a flood alert."}
 

@@ -1,42 +1,37 @@
 from unittest.mock import patch
 
+import api
 from api import RunRequest, dashboard
+
+REGION = {"id": "region_001", "name": "Kakinada", "river": "Godavari",
+          "latitude": 1.0, "longitude": 2.0, "timezone": "Asia/Kolkata"}
+USER = {"id": 1, "email": "user@gmail.com", "role": "user"}
+
+
+class FakeGauge:
+    def get_water_level(self, region):
+        return {"available": False, "latest_observed_m": 1.0, "reason": "replay only"}
 
 
 def test_dashboard_response_contains_only_user_facing_fields():
-    internal_result = {
-        "region": {"id": "region_001", "name": "Kakinada", "river": "Godavari", "latitude": 1.0},
-        "weather": {
-            "source": "Open-Meteo",
-            "current": {"temperature_c": 29.0},
-            "selected_hour": {"time": "2026-10-12T18:00", "temperature_c": 28.0, "source_type": "forecast"},
-            "hourly_conditions": [{"synthetic_or_internal": "must not leak"}],
-        },
-        "river_discharge": {"available": False, "discharge_m3s": None},
-        "water_level": {"available": False, "current_level_m": None, "latest_observed_m": 1.0},
-        "flood_assessment": {"status": "NOT_ASSESSED", "state": "NOT_ASSESSED", "complete": False, "reason": "Evidence missing"},
-        "flood_dashboard": {
-            "assessment_status": "NOT_ASSESSED",
-            "environmental_signal": "UNKNOWN",
-            "message": "Evidence missing",
-            "readiness": {"assessment_ready": False},
-        },
-        "flood_indicators": {
-            "rainfall": {"classification": "LOW", "current_rain_mm": 0.0},
-            "river": {"classification": "UNKNOWN", "available": False},
-            "water_level": {"classification": "UNKNOWN", "available": False},
-        },
-        "communication": {"attempts": [{"secret_internal_simulation": True}]},
-        "orchestrator": {"policy": "internal"},
-        "semantic_priorities": {"internal": True},
-        "channel_prediction": {"internal": True},
-        "provenance": {"synthetic": True},
+    weather = {
+        "source": "Open-Meteo",
+        "current": {"time": "2026-10-12T12:00", "temperature_c": 29.0, "rain_mm": 0.0},
+        "rainfall_windows": {"last_6h_precipitation_mm": 0.0},
+        "hourly_conditions": [{"time": "2026-10-12T18:00", "temperature_c": 28.0,
+                               "source_type": "forecast", "synthetic_or_internal": "must not leak"}],
     }
-    with patch("api.run_pipeline", return_value=internal_result):
-        response = dashboard(RunRequest(region_id="region_001", time_of_day="18:00"))
+    with patch.object(api, "get_region", return_value=REGION), \
+         patch.object(api, "get_weather_data", return_value=weather), \
+         patch.object(api, "get_discharge_analysis", return_value={"available": False}), \
+         patch.object(api, "CsvReplayProvider", FakeGauge):
+        response = dashboard(RunRequest(region_id="region_001", time_of_day="18:00"), user=USER)
 
     assert response["weather"]["selected_hour"]["time"].endswith("T18:00")
     assert response["region"] == {"id": "region_001", "name": "Kakinada", "river": "Godavari"}
     for private_key in ("communication", "orchestrator", "semantic_priorities", "channel_prediction", "provenance"):
         assert private_key not in response
     assert "hourly_conditions" not in response["weather"]
+    # Incomplete evidence must never be summarised as a LOW flood signal.
+    assert response["flood_dashboard"]["environmental_signal"] == "INCOMPLETE"
+    assert response["flood_assessment"]["complete"] is False

@@ -161,6 +161,13 @@ def reserve_alert_dispatch(region_id,status_value,event_id):
     except sqlite3.IntegrityError: return False
 def finish_alert_dispatch(region_id,status_value,event_id,count):
     with _connect() as db: db.execute("UPDATE alert_dispatches SET recipient_count=? WHERE region_id=? AND status=? AND event_id=?",(count,region_id,status_value,event_id))
+def release_alert_dispatch(region_id,status_value,event_id):
+    """Drop a reservation whose delivery failed for everyone, so the next monitor cycle retries it."""
+    with _connect() as db: db.execute("DELETE FROM alert_dispatches WHERE region_id=? AND status=? AND event_id=? AND recipient_count=0",(region_id,status_value,event_id))
+def list_alert_dispatches(limit=50):
+    with _connect() as db:
+        rows=db.execute("SELECT id,region_id,status,event_id,recipient_count,created_at FROM alert_dispatches ORDER BY id DESC LIMIT ?",(max(1,min(limit,200)),)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def login_is_locked(attempt_key):

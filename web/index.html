@@ -55,9 +55,12 @@ function renderEnvironment(data){
  }else if(signal==="MODERATE"||rainClass==="MODERATE"){
   setStatus("alert-state","MODERATE INDICATORS","unknown");
   set("alert-message","Some environmental indicators are moderate. Continue checking current local-authority information.");
+ }else if(rainClass==="LOW"){
+  setStatus("alert-state","LOW RAINFALL INDICATOR","info");
+  set("alert-message","Current rainfall is low. This reflects rainfall only and is not an official flood warning or an all-clear.");
  }else if(signal==="INCOMPLETE"||missing||!signal){
-  setStatus("alert-state","DATA INCOMPLETE","unknown");
-  set("alert-message","A reliable flood-risk assessment is not available from the currently verified data. This is not an all-clear.");
+  setStatus("alert-state","INDICATORS UNAVAILABLE","unknown");
+  set("alert-message","Live environmental indicators are not available for this region right now. This is not an all-clear.");
  }else{
   setStatus("alert-state","NO ELEVATED INDICATOR","info");
   set("alert-message","No elevated environmental indicator was reported by the available assessment. This is not an all-clear.");

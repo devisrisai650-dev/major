@@ -136,3 +136,78 @@ def test_environmental_indicator_email_rejects_low_level(monkeypatch, tmp_path):
         source="Open-Meteo", indicators="rainfall=0 mm")
     assert result["eligible"] is False
     assert sent == []
+
+
+def _register_alert_user(email="retry@gmail.com"):
+    user_id, token = auth_service.create_user(email, "a-long-user-password")
+    assert auth_service.verify_email_token(token)
+    return user_id
+
+
+def test_failed_delivery_is_audited_and_retried_next_cycle(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    _register_alert_user()
+    args = dict(region_id="region_001", region_name="Kakinada", level="HIGH",
+                event_id="HIGH:2026-10-20", observed_at="2026-10-20T11:45",
+                source="Open-Meteo live weather data", indicators="current rainfall=12 mm")
+
+    def broken(*_args, **_kwargs):
+        raise OSError("smtp down")
+
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email", broken)
+    first = alert_service.dispatch_environmental_indicator_alert(**args)
+    assert first["sent"] == 0 and first["delivery_errors"] == 1 and first["released_for_retry"] is True
+    failures = [a for a in auth_service.admin_snapshot()["recent_activity"] if a["action"] == "alert_email_failed"]
+    assert failures and "smtp down" in failures[0]["details"]
+
+    sent = []
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email",
+                        lambda recipient, **kwargs: sent.append(recipient))
+    second = alert_service.dispatch_environmental_indicator_alert(**args)
+    assert second["sent"] == 1 and "duplicate" not in second
+    assert sent == ["retry@gmail.com"]
+    assert alert_service.dispatch_environmental_indicator_alert(**args)["duplicate"] is True
+
+
+def test_no_subscribers_does_not_consume_the_event(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email", lambda *a, **k: None)
+    args = dict(region_id="region_001", region_name="Kakinada", level="MODERATE",
+                event_id="MODERATE:2026-10-20", observed_at="2026-10-20T09:00",
+                source="Open-Meteo live weather data", indicators="current rainfall=4 mm")
+    assert alert_service.dispatch_environmental_indicator_alert(**args)["sent"] == 0
+    _register_alert_user("late@gmail.com")
+    assert alert_service.dispatch_environmental_indicator_alert(**args)["sent"] == 1
+
+
+def test_indicator_email_body_uses_real_newlines(monkeypatch):
+    import services.email_service as email_service
+    captured = {}
+    monkeypatch.setattr(email_service, "send_email", lambda recipient, subject, body: captured.update(body=body))
+    email_service.send_environmental_indicator_email(
+        "a@gmail.com", region="Kakinada", level="HIGH", observed_at="2026-10-20T11:45",
+        source="Open-Meteo", indicators="current rainfall=12 mm")
+    assert "\\n" not in captured["body"]
+    assert "Indicator level: HIGH\nObservation time:" in captured["body"]
+
+
+def test_monitor_sends_one_indicator_notice_per_level_per_day(monkeypatch, tmp_path):
+    import services.alert_monitor as alert_monitor
+    use_test_database(monkeypatch, tmp_path)
+    _register_alert_user("daily@gmail.com")
+    sent = []
+    monkeypatch.setattr(alert_service, "send_environmental_indicator_email",
+                        lambda recipient, **kwargs: sent.append(kwargs["observed_at"]))
+
+    class FakeGauge:
+        def get_water_level(self, region):
+            return {"available": False}
+
+    monkeypatch.setattr(alert_monitor, "CsvReplayProvider", FakeGauge)
+    monkeypatch.setattr(alert_monitor, "get_discharge_analysis", lambda lat, lon: {"available": False})
+    region = {"id": "region_001", "name": "Kakinada", "latitude": 1.0, "longitude": 2.0}
+    for stamp in ("2026-10-20T11:45", "2026-10-20T12:00", "2026-10-20T12:15"):
+        monkeypatch.setattr(alert_monitor, "get_weather_data", lambda lat, lon, tz, s=stamp: {
+            "current": {"time": s, "rain_mm": 12.0}, "rainfall_windows": {"last_6h_precipitation_mm": 15.0}})
+        alert_monitor.check_region(region)
+    assert sent == ["2026-10-20T11:45"]

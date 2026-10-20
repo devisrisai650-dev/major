@@ -1,5 +1,12 @@
 # Changelog and Open Items
 
+## Admin dashboard, email alerts and user dashboard wording
+
+- User dashboard: the rainfall status now shows `LOW RAINFALL INDICATOR` when live rainfall is low, and `INDICATORS UNAVAILABLE` when no live indicator can be read, instead of the previous `DATA INCOMPLETE` badge. Both messages still state that this is not an official warning or an all-clear. The backend `NOT_ASSESSED` safety gate is unchanged.
+- Email: environmental indicator emails no longer contain literal `\n` text; they are sent once per region, level and calendar day instead of every ~15 minutes; a delivery that fails for every recipient is audited (`alert_email_failed`) and retried on the next monitor cycle instead of being suppressed; verification-email and SMTP-test failures now report the underlying reason.
+- Admin dashboard: added the alert monitor's last run per region, alert dispatch history, and a simulation runner (learning disabled) using the existing `/api/admin/pipeline` endpoint. New endpoint: `GET /api/admin/alerts/history`; `GET /api/admin/alerts/status` now includes `monitor_last_run`.
+- Tests: refreshed the stale `test_dashboard_api.py` and added `test_admin_api.py` plus alert-retry/dedupe regression tests.
+
 ## Phase 0–6 completion audit
 
 - Preserved conservative flood safety: assessment remains NOT_ASSESSED without verified official station-specific thresholds and fresh QC-passed gauge evidence.

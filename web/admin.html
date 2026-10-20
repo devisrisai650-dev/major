@@ -49,6 +49,26 @@
 </div>
 <p class="muted small">The SMTP test is a connectivity test sent only to the signed-in administrator. Real flood emails remain gated until the system has a complete authoritative assessment, verified official station thresholds, and fresh quality-controlled gauge evidence. Synthetic demo scenarios never trigger real flood-warning emails.</p>
 </section>
+<section class="panel">
+<div class="section-head"><h2>Alert monitor · last run</h2><span class="muted small" id="monitor-run-time">—</span></div>
+<div class="tablewrap"><table><thead><tr><th>Region</th><th>Assessment</th><th>Official alert emails</th><th>Indicator notice</th><th>Delivery errors</th><th>Notes</th></tr></thead><tbody id="monitor-rows"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
+<p class="muted small">Refreshed every monitor cycle. "Duplicate" means that region, level and day was already emailed. Deliveries that fail for every recipient are released and retried on the next cycle, and show up in the audit log as <code>alert_email_failed</code>.</p>
+</section>
+<section class="panel">
+<div class="section-head"><h2>Alert dispatch history</h2><span class="muted small">Latest 50 records</span></div>
+<div class="tablewrap"><table><thead><tr><th>Time</th><th>Region</th><th>Type</th><th>Event</th><th>Recipients</th></tr></thead><tbody id="history-rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+</section>
+<section class="panel">
+<div class="section-head"><h2>Simulation runner</h2>
+<div class="toolbar"><select id="sim-region" aria-label="Region"></select>
+<select id="sim-hour" aria-label="Hour"><option value="00:00">12:00 AM</option><option value="06:00">6:00 AM</option><option value="12:00" selected>12:00 PM</option><option value="18:00">6:00 PM</option></select>
+<input id="sim-attempts" type="number" min="1" max="20" value="5" style="width:80px" aria-label="Communication attempts">
+<button id="sim-run" class="primary">Run simulation</button></div></div>
+<p id="sim-status" class="muted">Runs the internal pipeline for one region. Learning is off, so the saved policy is not modified. Fetches live weather and can take a few seconds.</p>
+<div id="sim-summary" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"></div>
+<details><summary class="muted small">Raw pipeline response</summary><pre id="sim-raw">Nothing run yet.</pre></details>
+<p class="muted small">All communication, RIS-CNOMA and DRL values here are software simulation, not field measurements. Flood status stays NOT_ASSESSED without verified official evidence.</p>
+</section>
 <section class="panel"><div class="section-head"><h2>Safe configuration summary</h2><span class="muted small">Secrets are never displayed</span></div><pre id="backend">Loading configuration…</pre></section>
 <footer class="muted small">FloodAI Platform Admin · Access is enforced by server-side role checks. Never treat a demo scenario or incomplete evidence as a real flood warning.</footer>
 </main>
@@ -100,7 +120,8 @@ async function loadData(){
   ["backend",()=>api("/api/admin/backend")],
   ["users",()=>api("/api/admin/users")],
   ["health",()=>api("/api/health")],
-  ["alertStatus",()=>api("/api/admin/alerts/status")]
+  ["alertStatus",()=>api("/api/admin/alerts/status")],
+  ["history",()=>api("/api/admin/alerts/history")]
  ];
  const values={};
  await Promise.all(tasks.map(async([key,fn])=>{try{values[key]=await fn()}catch(e){failures.push(key+": "+e.message)}}));
@@ -124,7 +145,9 @@ async function loadData(){
   $("recipient-status").textContent=String(a.verified_alert_recipients);
   $("threshold-status").textContent=a.official_thresholds_verified?"Configured as verified":"Not verified";
   $("alert-status").textContent=a.reason;
- }else{$("alert-status").textContent="Alert status endpoint unavailable."; $("monitor-status").textContent="Unavailable";$("smtp-alert-status").textContent="Unavailable";$("recipient-status").textContent="Unavailable";$("threshold-status").textContent="Unavailable"}
+  renderMonitor(a.monitor_last_run);
+ }else{emptyRow($("monitor-rows"),6,"Alert status endpoint unavailable.");$("alert-status").textContent="Alert status endpoint unavailable."; $("monitor-status").textContent="Unavailable";$("smtp-alert-status").textContent="Unavailable";$("recipient-status").textContent="Unavailable";$("threshold-status").textContent="Unavailable"}
+ if(values.history)renderHistory(values.history.dispatches||[]);else emptyRow($("history-rows"),5,"Alert history unavailable.");
  if(!failures.length){setStatus("health-badge","Services responding","good");setMessage("Administrator session verified. Platform metrics, account management, and audit log refreshed.","ok")}
  else{setStatus("health-badge","Partial data","warn");setMessage("Some admin data could not load: "+failures.join(" · "),"error")}
  $("refresh").disabled=false;
@@ -133,6 +156,54 @@ $("test-email").addEventListener("click",async()=>{const b=$("test-email");b.dis
 $("user-search").addEventListener("input",()=>renderUsers(allUsers));
 $("refresh").addEventListener("click",loadData);
 $("logout").addEventListener("click",async()=>{ $("logout").disabled=true;try{await api("/api/auth/logout",{method:"POST"})}catch(e){}location.replace("/login")});
+function renderMonitor(state){
+ const body=$("monitor-rows");body.replaceChildren();
+ $("monitor-run-time").textContent=state&&state.last_run_at?"Last run "+state.last_run_at+" · cycles since start: "+state.runs:"No cycle completed yet";
+ const rows=state?.regions||[];
+ if(!rows.length){emptyRow(body,6,"No monitor cycle has completed since the server started, or the monitor is disabled.");return}
+ for(const r of rows){
+  const tr=document.createElement("tr");
+  cell(tr,r.region_name||r.region_id);cell(tr,r.error?"—":r.assessment_status);cell(tr,r.error?"—":r.official_alert_sent);
+  cell(tr,r.error?"—":(r.indicator_sent>0?"Sent to "+r.indicator_sent+" recipient(s)":r.indicator_duplicate?"Duplicate (already sent)":r.indicator_eligible?"Eligible, nothing sent":"Not triggered"));
+  cell(tr,r.error?"—":r.delivery_errors);cell(tr,r.error||r.indicator_note);
+  body.appendChild(tr);
+ }
+}
+function renderHistory(items){
+ const body=$("history-rows");body.replaceChildren();
+ if(!items.length){emptyRow(body,5,"No alert emails have been dispatched yet.");return}
+ for(const d of items){
+  const tr=document.createElement("tr"),indicator=String(d.status).startsWith("INDICATOR_");
+  cell(tr,d.created_at);cell(tr,d.region_id);
+  cell(tr,indicator?"Environmental indicator ("+String(d.status).slice(10)+")":"Official alert ("+d.status+")");
+  cell(tr,d.event_id);cell(tr,d.recipient_count);body.appendChild(tr);
+ }
+}
+function tile(label,value){const box=document.createElement("div"),h=document.createElement("h3"),v=document.createElement("div");h.textContent=label;v.textContent=value===null||value===undefined||value===""?"—":String(value);box.append(h,v);return box}
+const num=(v,unit="",digits=1)=>v===null||v===undefined||!Number.isFinite(Number(v))?"—":Number(v).toFixed(digits)+unit;
+function renderSim(d){
+ const k=d.communication_kpis||{},fd=d.flood_dashboard||{},ca=d.communication_alert||{},o=d.orchestrator||{};
+ $("sim-summary").replaceChildren(
+  tile("Assessment status",fd.assessment_status||d.flood_assessment?.status),tile("Environmental signal",fd.environmental_signal),
+  tile("Link status (simulated)",ca.status),tile("Delivery rate",num(k.delivery_rate_percent," %",0)),
+  tile("Mean latency",num(k.mean_latency_ms," ms")),tile("Mean AoI",num(k.mean_aoi_ms," ms")),
+  tile("Final SNR",num(k.final_snr_db," dB")),tile("Orchestrator policy",o.policy));
+ $("sim-raw").textContent=JSON.stringify(d,null,2);
+}
+async function loadSimRegions(){
+ try{const regions=await api("/api/regions");const select=$("sim-region");select.replaceChildren(...regions.map(r=>{const o=document.createElement("option");o.value=r.id;o.textContent=r.name+(r.river?" — "+r.river:"");return o}));$("sim-run").disabled=!regions.length}
+ catch(e){$("sim-status").textContent="Could not load regions: "+e.message;$("sim-run").disabled=true}
+}
+$("sim-run").addEventListener("click",async()=>{
+ const button=$("sim-run");button.disabled=true;$("sim-summary").replaceChildren();$("sim-status").textContent="Running simulation…";
+ try{
+  const attempts=Math.max(1,Math.min(20,Number($("sim-attempts").value)||5));
+  const d=await api("/api/admin/pipeline",{method:"POST",body:JSON.stringify({region_id:$("sim-region").value,communication_attempts:attempts,time_of_day:$("sim-hour").value,seed:2026,learn:false})});
+  renderSim(d);$("sim-status").textContent="Simulation finished for "+($("sim-region").selectedOptions[0]?.textContent||"region")+". Values are simulated.";
+ }catch(e){$("sim-status").textContent="Simulation failed: "+e.message;$("sim-raw").textContent="No result."}
+ finally{button.disabled=false}
+});
+loadSimRegions();
 loadData();
 </script>
 </body></html>
