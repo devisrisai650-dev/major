@@ -249,7 +249,7 @@ class RunRequest(BaseModel):
     seed: int = 2026
     time_of_day: str = Field(default="12:00", pattern=r"^(?:[01]\d|2[0-3]):00$")
     learn: bool = False
-    scenario_mode: str = Field(default="live", pattern="^live$")
+    scenario_mode: str = Field(default="auto", pattern="^(live|demo|auto)$")
 
 
 @app.get("/api/health")
@@ -416,6 +416,7 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    live_weather_available = True
     try:
         weather = get_weather_data(
             region["latitude"],
@@ -423,7 +424,16 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             region.get("timezone", "Asia/Kolkata"),
         )
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+        if request.scenario_mode != "auto":
+            raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
+        live_weather_available = False
+        weather = {
+            "source": "synthetic fallback pending; live weather unavailable",
+            "current": {"time": None, "temperature_c": None, "humidity_pct": None, "rain_mm": None},
+            "rainfall_windows": {},
+            "hourly_conditions": [],
+            "source_type": "synthetic_fallback",
+        }
 
     hourly_conditions = weather.get("hourly_conditions", [])
     current_stamp = weather.get("current", {}).get("time")
@@ -438,7 +448,19 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     water = CsvReplayProvider().get_water_level(region)
     analysis = analyze_flood_state(weather, discharge, water)
     scenario = None
-    if request.scenario_mode == "demo":
+    synthetic_fallback = request.scenario_mode == "auto" and (
+        not live_weather_available
+        or not discharge.get("available", False)
+        or not water.get("available", False)
+        or not water.get("is_recent", False)
+    )
+    use_synthetic = request.scenario_mode == "demo" or synthetic_fallback
+    scenario_mode_used = (
+        "demo" if request.scenario_mode == "demo"
+        else "synthetic_fallback" if synthetic_fallback
+        else "live"
+    )
+    if use_synthetic:
         # Clearly labelled synthetic scenario: demonstration data must never be
         # presented as an official warning or mixed silently with live gauge data.
         scenario_path = Path(__file__).resolve().parent / "config" / "demo_flood_scenarios.csv"
@@ -457,7 +479,11 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         rise = float(scenario["water_level_rise_m_per_hour"])
         level = float(scenario["water_level_m"])
         demo_discharge = float(scenario["river_discharge_m3s"])
-        weather["source"] = "Open-Meteo weather + synthetic flood demo rainfall"
+        weather["source"] = (
+            "Synthetic fallback dataset (live weather unavailable)"
+            if not live_weather_available
+            else "Live weather + synthetic flood demonstration rainfall"
+        )
         weather.setdefault("current", {})["rain_mm"] = rain
         if weather.get("selected_hour") is not None:
             weather["selected_hour"] = dict(weather["selected_hour"])
@@ -490,30 +516,35 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "classification": "HIGH" if demo_discharge >= 100 else "MODERATE",
             "reason": "Synthetic demonstration value; not a live gauge measurement.",
         }
+        # Synthetic values may be displayed as demo indicators but must never be
+        # represented as fresh/available gauge evidence for the official gate.
         water.update({
-            "available": True, "is_recent": True, "current_level_m": level,
-            "latest_observed_m": level, "current_time": request.time_of_day,
-            "age_hours": 0.0, "rate_of_change_m_per_hour": rise,
-            "station": "SYNTHETIC_DEMO", "reason": "Synthetic scenario value; not an official gauge reading.",
+            "available": False, "is_recent": False, "current_level_m": None,
+            "latest_observed_m": None, "current_time": None, "age_hours": None,
+            "rate_of_change_m_per_hour": None, "synthetic_level_m": level,
+            "provider": "synthetic_demo", "mode": "synthetic_fallback",
+            "station": "SYNTHETIC_DEMO",
+            "reason": "Synthetic scenario value; not an official gauge reading.",
         })
         analysis["water_level"] = {
-            "available": True, "current_m": level, "latest_observed_m": level,
+            "available": False, "current_m": level, "latest_observed_m": None,
             "rate_of_change_m_per_hour": rise,
             "classification": "VERY_RAPIDLY_RISING" if rise >= 0.2 else "RAPIDLY_RISING" if rise >= 0.1 else "RISING",
             "station": "SYNTHETIC_DEMO", "observation_time": request.time_of_day,
-            "age_hours": 0.0, "reason": "Synthetic demonstration value; not an official gauge reading.",
+            "age_hours": None, "reason": "Synthetic scenario value; not an official gauge reading.",
+            "source_type": "synthetic_demo",
         }
         analysis["flood_assessment"] = {
-            "status": "DEMO_FLOOD_SCENARIO", "state": "DEMO_FLOOD_SCENARIO",
+            "status": "NOT_ASSESSED", "state": "NOT_ASSESSED",
             "score": None, "complete": False,
-            "reason": "SIMULATED FLOOD DEMONSTRATION ONLY. Synthetic data is not a real flood warning or an all-clear.",
-            "missing_or_unconfigured": ["synthetic demonstration; official thresholds and live QC gauge evidence are not applied"],
+            "reason": "NOT_ASSESSED. Synthetic fallback data is for demonstration only, not a real flood warning or an all-clear.",
+            "missing_or_unconfigured": ["synthetic demonstration; verified official thresholds and fresh QC-passed gauge evidence are not available"],
         }
     flood = _flood_dashboard(analysis, water, weather, discharge)
     if scenario is not None:
-        flood["assessment_status"] = "DEMO_FLOOD_SCENARIO"
+        flood["assessment_status"] = "NOT_ASSESSED"
         flood["environmental_signal"] = "HIGH" if scenario["communication_status"] == "PARTIAL_OUTAGE" else "ELEVATED" if scenario["communication_status"] == "DEGRADED" else "LOW"
-        flood["message"] = "SIMULATED FLOOD DEMONSTRATION ONLY — synthetic rainfall and gauge values are not real-world warnings."
+        flood["message"] = "SYNTHETIC FLOOD DEMONSTRATION/FALLBACK ONLY — not a real-world warning; official assessment remains NOT_ASSESSED."
         flood["readiness"]["assessment_ready"] = False
     indicators = {
         "rainfall": analysis.get("rainfall", {}),
@@ -522,8 +553,12 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     }
     assessment = analysis.get("flood_assessment", {})
     return to_json_safe({
-        "scenario_mode": request.scenario_mode,
-        "scenario_notice": "SYNTHETIC FLOOD DEMONSTRATION — not a real warning" if request.scenario_mode == "demo" else "Live environmental inputs; flood risk remains NOT_ASSESSED without verified official evidence.",
+        "scenario_mode": scenario_mode_used,
+        "scenario_notice": (
+            "SYNTHETIC FLOOD DEMONSTRATION/FALLBACK — not a real warning; official assessment remains NOT_ASSESSED."
+            if use_synthetic
+            else "Live environmental inputs; flood risk remains NOT_ASSESSED without verified official evidence."
+        ),
         "communication_scenario": scenario.get("communication_status") if scenario else None,
         "region": {"id": region.get("id"), "name": region.get("name"), "river": region.get("river")},
         "weather": {
