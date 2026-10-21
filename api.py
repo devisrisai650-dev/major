@@ -30,6 +30,13 @@ from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
 from services.scenario_api import router as scenario_router
+from services.scenario_api import (
+    ScenarioRequest as ResearchScenarioRequest,
+    ScenarioRunRequest as ResearchScenarioRunRequest,
+    generate as generate_research_scenario,
+    run_scenario as run_research_scenario,
+    scenario_options as research_scenario_options,
+)
 
 _alert_monitor_task = None
 
@@ -578,13 +585,6 @@ app.include_router(scenario_router)
 
 # Direct route bindings for the research lab. These explicit application routes
 # make the prototype endpoints discoverable even when router composition changes.
-from services.scenario_api import (
-    ScenarioRequest as ResearchScenarioRequest,
-    ScenarioRunRequest as ResearchScenarioRunRequest,
-    generate as generate_research_scenario,
-    run_scenario as run_research_scenario,
-    scenario_options as research_scenario_options,
-)
 
 
 @app.get("/api/scenarios/options", tags=["scenario-lab"])
