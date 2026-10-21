@@ -153,9 +153,14 @@ def set_user_active(uid,active):
         if not active: db.execute("DELETE FROM sessions WHERE user_id=?",(uid,))
         return cur.rowcount>0
 def get_verified_alert_recipients():
+    """Return opted-in verified users plus an explicitly configured alert recipient."""
     with _connect() as db:
         rows=db.execute("SELECT email FROM users WHERE role='user' AND is_active=1 AND is_verified=1 AND alerts_enabled=1 ORDER BY id").fetchall()
-    return [r["email"] for r in rows]
+    recipients = [r["email"] for r in rows]
+    configured = os.getenv("FLOODAI_ALERT_RECIPIENT", "").strip()
+    if configured and EMAIL_RE.fullmatch(configured) and configured.lower() not in {email.lower() for email in recipients}:
+        recipients.append(configured)
+    return recipients
 def reserve_alert_dispatch(region_id,status_value,event_id):
     try:
         with _connect() as db: db.execute("INSERT INTO alert_dispatches(region_id,status,event_id,recipient_count,created_at) VALUES(?,?,?,0,?)",(region_id,status_value,event_id,iso()))
