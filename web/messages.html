@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FloodAI · Secure Messages</title>
+<style>
+:root{color-scheme:dark;--bg:#071219;--panel:#0e2029;--line:#294652;--text:#edf7f8;--muted:#9ab2bb;--teal:#55d6bd;--amber:#ffd071;--red:#ff8d84;--blue:#8eb8ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}header{padding:16px 4%;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}h1{font-size:21px;margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted)}main{max-width:1100px;margin:auto;padding:24px 16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}button,select,input,textarea{font:inherit;color:var(--text);background:#142b35;border:1px solid var(--line);border-radius:9px;padding:10px 12px}button{cursor:pointer;background:var(--teal);color:#06231f;font-weight:800}button:disabled{opacity:.5;cursor:wait}select{width:100%}.grid{display:grid;grid-template-columns:minmax(200px,.7fr) minmax(0,2fr);gap:14px}.chat{display:flex;flex-direction:column;min-height:420px}.messages{flex:1;min-height:260px;max-height:55vh;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:10px 2px}.bubble{max-width:min(90%,680px);padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:#132832;overflow-wrap:anywhere;align-self:flex-start}.bubble.mine{align-self:flex-end;border-color:#347568;background:#10302e}.time{font-size:11px;color:var(--muted);margin-top:5px}.shared{border:1px solid var(--line);border-radius:8px;padding:9px;margin-top:8px;background:#071920}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}textarea{width:100%;resize:vertical;min-height:65px}.error{color:var(--red);min-height:20px;font-size:13px}.status{font-size:12px;color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin:6px 0 0}.contact-note{font-size:12px;color:var(--muted);margin-top:10px}@media(max-width:680px){.grid{grid-template-columns:1fr}.compose{grid-template-columns:1fr}.messages{max-height:none}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>FloodAI · Secure Messages</h1><div id="who" class="muted">Checking account…</div></div>
+  <div class="toolbar"><a href="/" style="color:var(--teal)">Back to dashboard</a><button id="logout" type="button">Sign out</button></div>
+</header>
+<main>
+  <section class="panel">
+    <h2>Share information with another registered user</h2>
+    <p class="muted">Messages are stored by FloodAI and refreshed automatically about every 2.5 seconds. Share only information you are comfortable sending to the selected account.</p>
+    <div class="grid">
+      <div>
+        <label for="contacts">Conversation</label>
+        <select id="contacts"><option value="">Loading registered users…</option></select>
+        <p id="contact-note" class="contact-note">Only active, verified regular user accounts are listed.</p>
+        <div style="margin-top:16px">
+          <label for="region">Environmental data region</label>
+          <select id="region"><option value="">Loading regions…</option></select>
+        </div>
+        <button id="attach" type="button" style="width:100%;margin-top:10px">Attach current environmental data</button>
+        <div id="attachment-preview" class="shared" hidden></div>
+      </div>
+      <div class="chat">
+        <div class="toolbar" style="justify-content:space-between"><strong id="conversation-title">Choose a user to start</strong><span id="poll-status" class="status">Waiting</span></div>
+        <div id="messages" class="messages" aria-live="polite"><p class="muted">Select a registered user to view your conversation.</p></div>
+        <div id="error" class="error" role="status"></div>
+        <label for="content">Message</label>
+        <div class="compose">
+          <textarea id="content" maxlength="4000" placeholder="Type a message or share the attached environmental data…"></textarea>
+          <button id="send" type="button" disabled>Send message</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <p class="muted" style="font-size:12px">Environmental data is provided by the configured weather API and may be model-derived. Shared readings are informational only, not an official flood warning. FloodAI flood assessment remains NOT_ASSESSED unless verified evidence and official thresholds support an assessment.</p>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let me=null, peerId=null, lastId=0, pendingAttachment=null, pollTimer=null, firstLoad=true, polling=false;
+async function api(url,options={}) {
+  const response=await fetch(url,{credentials:"same-origin",...options});
+  let data={};try{data=await response.json()}catch{}
+  if(!response.ok){const error=new Error(data.detail||"Request failed ("+response.status+")");error.status=response.status;throw error}
+  return data;
+}
+function el(tag,cls,text){const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=String(text);return node}
+function showError(message){$("error").textContent=message||""}
+function formatTime(value){if(!value)return "Time unavailable";const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString()}
+function renderMessage(message){
+  const box=el("article","bubble"+(message.sender.id===me.id?" mine":""));
+  const heading=el("strong","",message.sender.id===me.id?"You":message.sender.email);
+  const body=el("div","",message.content);
+  box.append(heading,body);
+  if(message.shared_data){
+    const shared=el("div","shared");
+    shared.append(el("strong","","Shared environmental data"));
+    const details=el("pre","",JSON.stringify(message.shared_data,null,2));
+    shared.append(details);
+    box.append(shared);
+  }
+  const status=message.sender.id===me.id?(message.read_at?"Read":"Sent"):"Received";
+  box.append(el("div","time",formatTime(message.created_at)+" · "+status));
+  $("messages").append(box);
+}
+async function loadContacts(){
+  const result=await api("/api/messages/contacts");
+  const select=$("contacts");select.replaceChildren();
+  if(!result.contacts.length){select.add(new Option("No other registered users yet",""));$("contact-note").textContent="Create a second regular user account in FloodAI, then reload this page.";return}
+  select.add(new Option("Choose a user…",""));
+  for(const contact of result.contacts)select.add(new Option(contact.email,String(contact.id)));
+}
+async function loadRegions(){
+  const regions=await api("/api/regions");
+  const select=$("region");select.replaceChildren();
+  for(const region of regions)select.add(new Option(region.name+" — "+(region.river||"regional weather"),region.id));
+}
+async function selectPeer(){
+  peerId=Number($("contacts").value)||null;lastId=0;firstLoad=true;
+  $("messages").replaceChildren();showError("");
+  $("send").disabled=!peerId;
+  $("conversation-title").textContent=peerId?$("contacts").selectedOptions[0].textContent:"Choose a user to start";
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null}
+  if(peerId){await pollMessages(true);pollTimer=setInterval(()=>pollMessages(false),2500)}
+}
+async function pollMessages(initial){
+  if(!peerId||polling)return;polling=true;
+  try{
+    const query=initial||lastId===0?"after_id=0":"after_id="+lastId;
+    const result=await api("/api/messages/"+peerId+"?"+query+"&limit=100");
+    if(initial||lastId===0){$("messages").replaceChildren();lastId=0}
+    for(const message of result.messages||[]){
+      if(message.id>lastId){renderMessage(message);lastId=message.id}
+    }
+    if(initial)$("messages").scrollTop=$("messages").scrollHeight;
+    else if((result.messages||[]).length)$("messages").scrollTop=$("messages").scrollHeight;
+    $("poll-status").textContent="Live refresh · "+new Date().toLocaleTimeString();
+    $("poll-status").title="Messages refresh automatically every 2.5 seconds";
+    showError("");
+  }catch(error){
+    if(error.status===401||error.status===403){location.replace("/login");return}
+    showError("Could not refresh messages: "+error.message);
+    $("poll-status").textContent="Connection issue";
+  }finally{polling=false}
+}
+async function attachEnvironmentalData(){
+  const regionId=$("region").value;if(!regionId){showError("Choose a region first.");return}
+  $("attach").disabled=true;
+  try{
+    pendingAttachment=await api("/api/environmental-indicators/"+encodeURIComponent(regionId));
+    $("attachment-preview").hidden=false;
+    $("attachment-preview").replaceChildren(
+      el("strong","","Environmental data attached"),
+      el("pre","",JSON.stringify({
+        region:pendingAttachment.region?.name,
+        source:pendingAttachment.source,
+        source_timestamp:pendingAttachment.source_timestamp,
+        conditions:pendingAttachment.conditions,
+        rainfall_signal:pendingAttachment.rainfall_signal,
+        flood_assessment_status:pendingAttachment.flood_assessment_status
+      },null,2))
+    );
+    showError("");
+  }catch(error){showError("Could not fetch environmental data: "+error.message)}
+  finally{$("attach").disabled=false}
+}
+async function sendMessage(){
+  if(!peerId)return;
+  const content=$("content").value.trim();
+  if(!content&&!pendingAttachment){showError("Enter a message or attach environmental data first.");return}
+  $("send").disabled=true;
+  try{
+    await api("/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      recipient_id:peerId,
+      content:content||"Shared environmental snapshot",
+      shared_data:pendingAttachment
+    })});
+    $("content").value="";pendingAttachment=null;$("attachment-preview").hidden=true;
+    await pollMessages(false);showError("");
+  }catch(error){showError("Message could not be sent: "+error.message)}
+  finally{$("send").disabled=!peerId}
+}
+async function start(){
+  try{
+    const auth=await api("/api/auth/me");
+    if(auth.user.role==="admin"){location.replace("/admin");return}
+    me=auth.user;$("who").textContent=me.email+" · signed in";
+    await Promise.all([loadContacts(),loadRegions()]);
+  }catch(error){
+    if(error.status===401||error.status===403){location.replace("/login");return}
+    showError("Could not load messaging: "+error.message);
+  }
+}
+$("contacts").addEventListener("change",selectPeer);
+$("attach").addEventListener("click",attachEnvironmentalData);
+$("send").addEventListener("click",sendMessage);
+$("content").addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendMessage()}});
+$("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST"})}finally{location.replace("/login")}});
+start();
+</script>
+</body>
+</html>
