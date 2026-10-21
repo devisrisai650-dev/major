@@ -53,8 +53,7 @@ def _flood_dashboard(analysis, water, weather, discharge):
         river.get("classification"),
         gauge.get("classification"),
     ]
-    severe = {"VERY_HIGH", "VERY_RAPIDLY_RISING"}
-    elevated = {"HIGH", "RAPIDLY_RISING", "MODERATE"}
+    severe = {"HIGH", "VERY_HIGH", "VERY_RAPIDLY_RISING"}
     readiness = {
         "thresholds_verified": not any("verified official" in item for item in missing),
         "fresh_qc_gauge": bool(gauge.get("available") and gauge.get("is_recent")),
@@ -62,24 +61,19 @@ def _flood_dashboard(analysis, water, weather, discharge):
         "complete_6h_rainfall_available": rainfall.get("last_6h_precipitation_mm") is not None,
         "assessment_ready": bool(assessment.get("complete")),
     }
-    # Never summarize incomplete evidence as a LOW flood signal. Indicators are
-    # descriptive only until official thresholds and fresh QC gauge evidence exist.
-    # Environmental signal tiers describe available indicators only. They are
-    # not an official flood-risk classification and never override the
-    # evidence-gated assessment status below.
+    # These tiers summarize available environmental indicators only; they are
+    # not an official flood warning or a guarantee that flooding is absent.
     known = [str(value).upper() for value in classifications if value]
     if any(value in severe for value in known):
         environmental_level = "HIGH"
-    elif any(value in {"HIGH", "RAPIDLY_RISING", "MODERATE"} for value in known):
+    elif any(value in {"RAPIDLY_RISING", "MODERATE"} for value in known):
         environmental_level = "MEDIUM"
     elif any(value in {"LOW", "STABLE", "RISING"} for value in known):
         environmental_level = "LOW"
     else:
         environmental_level = "UNKNOWN"
 
-    if not readiness["assessment_ready"]:
-        signal = "INCOMPLETE"
-    elif environmental_level == "HIGH":
+    if environmental_level == "HIGH":
         signal = "HIGH"
     elif environmental_level == "MEDIUM":
         signal = "ELEVATED"
