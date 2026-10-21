@@ -68,6 +68,8 @@ async function start(){try{const auth=await jsonFetch("/api/auth/me");if(auth.us
 $("email-alerts").addEventListener("change",async()=>{const control=$("email-alerts");control.disabled=true;try{const d=await jsonFetch("/api/auth/notifications",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:control.checked})});$("preference-status").textContent=d.alerts_enabled?"Email notifications enabled.":"Email notifications disabled."}catch(e){control.checked=!control.checked;$("preference-status").textContent=e.message}finally{control.disabled=false}});
 $("logout").addEventListener("click",async()=>{try{await jsonFetch("/api/auth/logout",{method:"POST"})}finally{location.replace("/login")}});
 start();
+// Refresh latest configured environmental data every five minutes while the dashboard is open.
+setInterval(()=>{if(!document.hidden && $("region-select").value) refreshDashboard()},300000);
 </script>
 </body>
 </html>
