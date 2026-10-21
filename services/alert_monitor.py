@@ -36,22 +36,31 @@ def check_region(region:dict[str,Any])->dict[str,Any]:
     }
     result=dispatch_verified_flood_alert(region_id=str(region["id"]),region_name=str(region["name"]),
                                           assessment=assessment,evidence=evidence)
-    rain=analysis.get("rainfall",{})
-    rain_class=str(rain.get("classification","UNKNOWN")).upper()
-    # This separate email is an advisory about live environmental indicators,
-    # not a claim of an official flood warning. Synthetic dashboard data is not used here.
-    indicator_result={"sent":0,"eligible":False,"reason":"No moderate/high live rainfall indicator."}
-    if rain_class in {"MODERATE","HIGH","VERY_HIGH"}:
-        level="MODERATE" if rain_class=="MODERATE" else "HIGH"
-        observed_at=str(weather.get("current",{}).get("time") or analysis.get("timestamp") or "")
-        # One advisory per region, per level, per calendar day. Keying on the full observation
-        # timestamp (which changes every ~15 minutes) re-emailed everyone for the same rain event.
-        # A MODERATE -> HIGH escalation still produces a new email because the level differs.
-        indicator_result=dispatch_environmental_indicator_alert(
-            region_id=str(region["id"]),region_name=str(region["name"]),level=level,
-            event_id=f"{level}:{observed_at[:10]}",observed_at=observed_at,
-            source="Open-Meteo live weather data",
-            indicators=f"current rainfall={rain.get('current_rain_mm')} mm; 6-hour rainfall={rain.get('last_6h_precipitation_mm')} mm")
+    # Match the dashboard's environmental tier from available rainfall, river,
+    # and gauge classifications. These emails are advisory, not official warnings.
+    classifications = [
+        str(analysis.get("rainfall", {}).get("classification", "UNKNOWN")).upper(),
+        str(analysis.get("river", {}).get("classification", "UNKNOWN")).upper(),
+        str(analysis.get("water_level", {}).get("classification", "UNKNOWN")).upper(),
+    ]
+    high_signals = {"HIGH", "VERY_HIGH", "VERY_RAPIDLY_RISING"}
+    medium_signals = {"MODERATE", "RAPIDLY_RISING"}
+    level = "HIGH" if any(value in high_signals for value in classifications) else (
+        "MEDIUM" if any(value in medium_signals for value in classifications) else None
+    )
+    indicator_result = {"sent": 0, "eligible": False, "reason": "No medium/high environmental indicator."}
+    if level:
+        observed_at = str(weather.get("current", {}).get("time") or analysis.get("timestamp") or "")
+        indicator_result = dispatch_environmental_indicator_alert(
+            region_id=str(region["id"]), region_name=str(region["name"]), level=level,
+            event_id=f"{level}:{observed_at[:10]}", observed_at=observed_at,
+            source="Available live environmental indicators",
+            indicators=(
+                f"rainfall={analysis.get('rainfall', {}).get('classification', 'UNKNOWN')}; "
+                f"river discharge={analysis.get('river', {}).get('classification', 'UNKNOWN')}; "
+                f"water-level trend={analysis.get('water_level', {}).get('classification', 'UNKNOWN')}"
+            ),
+        )
     return {"region_id":region["id"],"assessment_status":assessment.get("status","NOT_ASSESSED"),
             "alert":result,"environmental_indicator_email":indicator_result}
 
