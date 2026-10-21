@@ -35,3 +35,7 @@ def test_dashboard_response_contains_only_user_facing_fields():
     # Incomplete evidence must never be summarised as a LOW flood signal.
     assert response["flood_dashboard"]["environmental_signal"] == "INCOMPLETE"
     assert response["flood_assessment"]["complete"] is False
+    assert response["flood_assessment"]["status"] == "NOT_ASSESSED"
+    assert response["scenario_mode"] == "synthetic_fallback"
+    assert "not a real warning" in response["scenario_notice"].lower()
+    assert response["water_level"]["available"] is False
