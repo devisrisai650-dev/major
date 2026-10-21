@@ -557,6 +557,10 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         flood["assessment_state"] = "NOT_ASSESSED"
         flood["assessment_ready"] = False
         flood["readiness"]["assessment_ready"] = False
+        flood["environmental_signal"] = "INCOMPLETE"
+        flood["message"] = assessment.get("reason") or (
+            "Official flood assessment is NOT_ASSESSED because required verified evidence is incomplete."
+        )
 
     return to_json_safe({
         "scenario_mode": "live",
@@ -628,14 +632,6 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "rainfall": indicators["rainfall"],
             "river": indicators["river"],
             "water_level": indicators["water_level"],
-        },
-        "provenance": {
-            "communication_mode": "not_run_on_operational_dashboard",
-            "weather_source": weather.get("source"),
-            "weather_retrieved_at_utc": weather.get("retrieved_at_utc"),
-            "gauge_mode": water.get("mode", "unavailable"),
-            "synthetic_fallback_used": False,
-            "flood_assessment_status": assessment.get("status", "NOT_ASSESSED"),
         },
         "disclaimer": {
             "flood_assessment": (
