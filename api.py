@@ -88,7 +88,9 @@ def _flood_dashboard(analysis, water, weather, discharge):
     else:
         signal = "INCOMPLETE"
     return {
-        "assessment_status": assessment.get("status", "NOT_ASSESSED"),
+        "assessment_status": environmental_level,
+        "flood_status": environmental_level,
+        "status_basis": "available_environmental_indicators",
         "environmental_level": environmental_level,
         "environmental_level_label": {
             "HIGH": "HIGH ENVIRONMENTAL SIGNAL",
@@ -97,10 +99,10 @@ def _flood_dashboard(analysis, water, weather, discharge):
             "UNKNOWN": "INSUFFICIENT INDICATOR DATA",
         }[environmental_level],
         "status_disclaimer": (
-            "Environmental signal tiers summarize available rainfall, discharge, "
-            "and gauge trend indicators only. They are not official flood-risk "
-            "levels. No-flood/all-clear status requires validated official "
-            "thresholds and fresh quality-controlled gauge evidence."
+            "Flood status is an indicative estimate derived from available rainfall, "
+            "river discharge, and water-level trend indicators. It is not an "
+            "official warning. LOW means available indicators are low, not a "
+            "guarantee that flooding is absent."
         ),
 
         "assessment_state": assessment.get("state", "NOT_ASSESSED"),
