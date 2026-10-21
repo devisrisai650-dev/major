@@ -28,11 +28,12 @@ def test_message_rejects_self_send(tmp_path, monkeypatch):
         raise AssertionError("Self-messaging must be rejected")
 
 
-def test_message_body_is_trimmed_and_empty_is_rejected():
+def test_message_body_is_trimmed_and_empty_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setattr(dm, "DB_PATH", tmp_path / "messages.sqlite3")
     try:
         dm.SendMessageRequest(recipient_email="other@example.com", message="   ")
         # Pydantic permits whitespace; endpoint rejects after trimming.
-        dm._active_registered_user = lambda email: {"id": 8, "email": email}
+        monkeypatch.setattr(dm, "_active_registered_user", lambda email: {"id": 8, "email": email})
         dm.send_message(dm.SendMessageRequest(recipient_email="other@example.com", message="   "),
                         {"id": 7, "email": "me@example.com", "role": "user"})
     except HTTPException as exc:
