@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 import requests
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
@@ -77,7 +77,7 @@ def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
         "rainfall_windows": rain_windows,
         "source": "Open-Meteo",
         "current_source_type": "current_model_estimate",
-        "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at_utc": datetime.now(dt_timezone.utc).isoformat(),
         "provenance_note": "Open-Meteo current and hourly values are model-based estimates/forecasts, not verified ground-station observations.",
     }
 
