@@ -196,14 +196,25 @@ async def prometheus_middleware(request, call_next):
 def login_page():
     return FileResponse(Path(__file__).resolve().parent / "web" / "login.html")
 
-@app.get("/", include_in_schema=False)
-def homepage(request: Request):
+def _dashboard_response(request: Request):
     user = get_user_from_request(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     if user["role"] == "admin":
         return RedirectResponse("/admin", status_code=303)
     return FileResponse(Path(__file__).resolve().parent / "web" / "index.html")
+
+
+@app.get("/", include_in_schema=False)
+def homepage(request: Request):
+    return _dashboard_response(request)
+
+
+@app.get("/dashboard", include_in_schema=False)
+def user_dashboard(request: Request):
+    """Convenient authenticated route for the regular-user dashboard."""
+    return _dashboard_response(request)
+
 
 @app.get("/admin", include_in_schema=False)
 def admin_page(request: Request):
