@@ -71,6 +71,15 @@
 </section>
 <section class="panel"><div class="section-head"><h2>Safe configuration summary</h2><span class="muted small">Secrets are never displayed</span></div><pre id="backend">Loading configuration…</pre></section>
 <footer class="muted small">FloodAI Platform Admin · Access is enforced by server-side role checks. Never treat a demo scenario or incomplete evidence as a real flood warning.</footer>
+
+<section id="admin-communication" style="margin:24px 0;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h2>Communication reliability — backend metrics</h2><span style="color:var(--amber);font-weight:700;font-size:12px">SIMULATION ONLY</span></div>
+<p class="muted">Aggregate results and event logs saved by the communication simulator. These are modeled outcomes, not real radio telemetry. Flood risk remains NOT_ASSESSED.</p>
+<div class="actions"><button id="comm-metrics-refresh" class="primary" type="button">Refresh communication metrics</button><span id="comm-metrics-status" class="muted" role="status">Not loaded yet.</span></div>
+<div id="comm-metrics-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:14px 0"></div>
+<div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Created (UTC)</th><th align="left">Message ID</th><th align="left">Route</th><th align="left">Scenario</th><th align="left">Status</th><th align="right">Attempts</th><th align="right">Modeled latency</th></tr></thead><tbody id="comm-metrics-rows"><tr><td colspan="7">Load metrics to view runs.</td></tr></tbody></table></div>
+<details style="margin-top:12px"><summary>Selected run event logs / metrics</summary><pre id="comm-metrics-detail" style="white-space:pre-wrap;overflow:auto;max-height:460px">Select a run row.</pre></details>
+</section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -205,5 +214,7 @@ $("sim-run").addEventListener("click",async()=>{
 });
 loadSimRegions();
 loadData();
+
+async function loadCommunicationMetrics(){const status=document.getElementById("comm-metrics-status"),cards=document.getElementById("comm-metrics-cards"),rows=document.getElementById("comm-metrics-rows"),detail=document.getElementById("comm-metrics-detail");status.textContent="Loading…";try{const r=await fetch("/api/admin/communication-metrics",{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.detail||"Could not load metrics");const t=d.totals;const esc=s=>String(s??"—").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));cards.innerHTML=[["Runs",t.runs],["Delivery rate",t.delivery_rate_percent+"%"],["Acknowledgement rate",t.acknowledgement_rate_percent+"%"],["Mean modeled latency",t.mean_modeled_latency_ms==null?"—":t.mean_modeled_latency_ms+" ms"],["Mean attempts",t.mean_attempts??"—"]].map(x=>'<div class="card" style="padding:12px"><div class="muted">'+esc(x[0])+'</div><strong style="font-size:22px">'+esc(x[1])+'</strong></div>').join("");rows.innerHTML=d.runs.length?d.runs.map((x,i)=>'<tr data-comm-run="'+i+'" style="border-top:1px solid var(--line);cursor:pointer"><td>'+esc(x.created_at)+'</td><td>'+esc(x.message_id.slice(0,8))+'</td><td>'+esc(x.sender)+' → '+esc(x.receiver)+'</td><td>'+esc(x.scenario)+'</td><td>'+esc(x.status)+'</td><td align="right">'+x.attempts+'</td><td align="right">'+(x.latency_ms==null?"—":esc(x.latency_ms)+" ms")+'</td></tr>').join(""):'<tr><td colspan="7">No communication runs have been recorded.</td></tr>';rows.querySelectorAll("tr[data-comm-run]").forEach(row=>row.addEventListener("click",()=>{const x=d.runs[Number(row.dataset.commRun)];detail.textContent=JSON.stringify({message_id:x.message_id,message:x.message,metrics:x.metrics,events:x.events},null,2)}));status.textContent="Loaded "+t.runs+" saved runs. "+d.notice;}catch(e){status.textContent="Could not load metrics: "+e.message;}}document.getElementById("comm-metrics-refresh")?.addEventListener("click",loadCommunicationMetrics);loadCommunicationMetrics();
 </script>
 </body></html>
