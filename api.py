@@ -64,16 +64,45 @@ def _flood_dashboard(analysis, water, weather, discharge):
     }
     # Never summarize incomplete evidence as a LOW flood signal. Indicators are
     # descriptive only until official thresholds and fresh QC gauge evidence exist.
+    # Environmental signal tiers describe available indicators only. They are
+    # not an official flood-risk classification and never override the
+    # evidence-gated assessment status below.
+    known = [str(value).upper() for value in classifications if value]
+    if any(value in severe for value in known):
+        environmental_level = "HIGH"
+    elif any(value in {"HIGH", "RAPIDLY_RISING", "MODERATE"} for value in known):
+        environmental_level = "MEDIUM"
+    elif any(value in {"LOW", "STABLE", "RISING"} for value in known):
+        environmental_level = "LOW"
+    else:
+        environmental_level = "UNKNOWN"
+
     if not readiness["assessment_ready"]:
         signal = "INCOMPLETE"
-    elif any(x in severe for x in classifications):
+    elif environmental_level == "HIGH":
         signal = "HIGH"
-    elif any(x in elevated for x in classifications):
+    elif environmental_level == "MEDIUM":
         signal = "ELEVATED"
-    else:
+    elif environmental_level == "LOW":
         signal = "LOW"
+    else:
+        signal = "INCOMPLETE"
     return {
         "assessment_status": assessment.get("status", "NOT_ASSESSED"),
+        "environmental_level": environmental_level,
+        "environmental_level_label": {
+            "HIGH": "HIGH ENVIRONMENTAL SIGNAL",
+            "MEDIUM": "MEDIUM ENVIRONMENTAL SIGNAL",
+            "LOW": "LOW ENVIRONMENTAL SIGNAL",
+            "UNKNOWN": "INSUFFICIENT INDICATOR DATA",
+        }[environmental_level],
+        "status_disclaimer": (
+            "Environmental signal tiers summarize available rainfall, discharge, "
+            "and gauge trend indicators only. They are not official flood-risk "
+            "levels. No-flood/all-clear status requires validated official "
+            "thresholds and fresh quality-controlled gauge evidence."
+        ),
+
         "assessment_state": assessment.get("state", "NOT_ASSESSED"),
         "assessment_ready": readiness["assessment_ready"],
         "environmental_signal": signal,
