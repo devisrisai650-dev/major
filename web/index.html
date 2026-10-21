@@ -47,6 +47,19 @@ main{max-width:1200px;margin:auto;padding:26px clamp(14px,3.5vw,42px) 48px}.eyeb
 <h3 class="section-title">Assessment readiness</h3>
 <section class="card"><div id="readiness-grid" class="rows"></div><h3 style="margin-top:18px">Missing or unverified evidence</h3><ul id="missing-list" class="list"><li>Waiting for assessment.</li></ul></section>
 <p class="footnote">Live weather is retrieved from the configured weather service. River/gauge values depend on the configured provider and may be unavailable or stale. RIS/CNOMA/channel performance is simulated in the research pipeline and is not live radio-network telemetry. Follow official local disaster-management instructions during an emergency.</p>
+
+<section id="communication-test" class="panel" aria-labelledby="communication-title" style="margin:24px 0;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><h2 id="communication-title">Two-user communication reliability test</h2><span style="font-size:12px;color:var(--amber);font-weight:700">SOFTWARE SIMULATION ONLY</span></div>
+<p class="muted">Test message delivery and acknowledgement between two simulated users. This does not test a real radio link. Flood risk remains NOT_ASSESSED.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
+<label>Sender<input id="comm-sender" value="User A" maxlength="80" style="display:block;width:100%;margin-top:5px"></label>
+<label>Receiver<input id="comm-receiver" value="User B" maxlength="80" style="display:block;width:100%;margin-top:5px"></label>
+<label>Scenario<select id="comm-scenario" style="display:block;width:100%;margin-top:5px"><option>Mild</option><option>Moderate</option><option selected>Severe</option></select></label>
+</div>
+<label style="display:block;margin-top:12px">Message<textarea id="comm-message" rows="3" maxlength="1000" style="display:block;width:100%;margin-top:5px">Flood water rising near the bridge. Please move to higher ground.</textarea></label>
+<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button id="comm-send" class="primary" type="button">Send simulated message</button><span id="comm-status" role="status" class="muted">Ready to run.</span></div>
+<div id="comm-result" aria-live="polite" style="margin-top:16px"></div>
+</section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -69,6 +82,8 @@ $("logout").addEventListener("click",async()=>{try{await jsonFetch("/api/auth/lo
 start();
 // Refresh latest configured environmental data every five minutes while the dashboard is open.
 setInterval(()=>{if(!document.hidden && $("region-select").value) refreshDashboard()},300000);
+
+async function runCommunicationTest(){const btn=document.getElementById("comm-send"),out=document.getElementById("comm-result"),status=document.getElementById("comm-status");btn.disabled=true;status.textContent="Running software simulation…";out.replaceChildren();try{const r=await fetch("/api/communication/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sender:document.getElementById("comm-sender").value,receiver:document.getElementById("comm-receiver").value,message:document.getElementById("comm-message").value,scenario:document.getElementById("comm-scenario").value,seed:2026})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Simulation failed");status.textContent="Simulation complete · "+d.status;const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));out.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px"><div class="card"><strong>Status</strong><div>'+esc(d.status)+'</div></div><div class="card"><strong>Attempts</strong><div>'+d.attempts+'</div></div><div class="card"><strong>Modeled latency</strong><div>'+(d.latency_ms==null?'—':d.latency_ms+' ms')+'</div></div><div class="card"><strong>Acknowledged</strong><div>'+(d.acknowledged?'Yes':'No')+'</div></div></div><p><strong>Message ID:</strong> '+esc(d.message_id)+'</p><p>'+esc(d.notice)+'</p><h3>Backend event timeline</h3><ol>'+d.events.map(e=>'<li><strong>'+esc(e.event)+'</strong> — '+esc(e.detail)+'</li>').join('')+'</ol><details><summary>Metrics JSON</summary><pre style="white-space:pre-wrap">'+esc(JSON.stringify(d.metrics,null,2))+'</pre></details>';}catch(e){status.textContent="Simulation failed: "+e.message;}finally{btn.disabled=false;}}document.getElementById("comm-send")?.addEventListener("click",runCommunicationTest);
 </script>
 </body>
 </html>
