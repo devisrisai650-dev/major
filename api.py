@@ -29,6 +29,14 @@ from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+from services.scenario_api import router as scenario_router
+from services.scenario_api import (
+    ScenarioRequest as ResearchScenarioRequest,
+    ScenarioRunRequest as ResearchScenarioRunRequest,
+    generate as generate_research_scenario,
+    run_scenario as run_research_scenario,
+    scenario_options as research_scenario_options,
+)
 
 _alert_monitor_task = None
 
@@ -214,6 +222,15 @@ def homepage(request: Request):
 def user_dashboard(request: Request):
     """Convenient authenticated route for the regular-user dashboard."""
     return _dashboard_response(request)
+
+
+@app.get("/research-lab", include_in_schema=False)
+def research_lab_page(request: Request):
+    """Authenticated synthetic research/replay UI; never an operational warning interface."""
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "research-lab.html")
 
 
 @app.get("/admin", include_in_schema=False)
@@ -562,3 +579,24 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         },
     })
 
+# Register the research router after the application routes are declared.
+app.include_router(scenario_router)
+
+
+# Direct route bindings for the research lab. These explicit application routes
+# make the prototype endpoints discoverable even when router composition changes.
+
+
+@app.get("/api/scenarios/options", tags=["scenario-lab"])
+def research_scenario_options_route():
+    return research_scenario_options()
+
+
+@app.post("/api/scenarios/generate", tags=["scenario-lab"])
+def research_scenario_generate_route(request: ResearchScenarioRequest):
+    return generate_research_scenario(request)
+
+
+@app.post("/api/scenarios/run", tags=["scenario-lab"])
+def research_scenario_run_route(request: ResearchScenarioRunRequest):
+    return run_research_scenario(request)

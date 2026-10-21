@@ -5,8 +5,8 @@ import hashlib, hmac, os, re, secrets, sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import HTTPException, Request, status
-ROOT=Path(__file__).resolve().parents[1]
 from dotenv import load_dotenv
+ROOT=Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env", override=False)
 DB_PATH=Path(os.getenv("FLOODAI_AUTH_DB",str(ROOT/"data"/"floodai_auth.sqlite3")))
 SESSION_COOKIE="floodai_session"; SESSION_HOURS=int(os.getenv("FLOODAI_SESSION_HOURS","12")); PBKDF2_ROUNDS=310_000
