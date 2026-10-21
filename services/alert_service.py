@@ -45,8 +45,10 @@ def dispatch_verified_flood_alert(*,region_id:str,region_name:str,assessment:dic
 def dispatch_environmental_indicator_alert(*,region_id:str,region_name:str,level:str,event_id:str,observed_at:str,source:str,indicators:str)->dict[str,Any]:
     """Email moderate/high live environmental indicators without mislabelling them as official flood warnings."""
     level=level.upper()
-    if level not in {"MODERATE","HIGH"} or not event_id or not observed_at:
-        return {"sent":0,"eligible":False,"reason":"No moderate/high live environmental indicator with a timestamp."}
+    if level == "MODERATE":
+        level = "MEDIUM"
+    if level not in {"MEDIUM","HIGH"} or not event_id or not observed_at:
+        return {"sent":0,"eligible":False,"reason":"No medium/high live environmental indicator with a timestamp."}
     status_key="INDICATOR_"+level
     if not reserve_alert_dispatch(region_id,status_key,event_id):
         return {"sent":0,"eligible":True,"duplicate":True}

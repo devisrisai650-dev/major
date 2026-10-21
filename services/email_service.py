@@ -80,7 +80,7 @@ def send_flood_alert(recipient, *, region, status, observed_at, source, message)
 def send_environmental_indicator_email(
     recipient, *, region, level, observed_at, source, indicators
 ):
-    """Send a clearly labelled advisory email, never an official flood warning."""
+    """Send a clearly labelled medium/high environmental advisory, never an official flood warning."""
     body = (
         f"FloodAI environmental indicator notice for {region}\n\n"
         f"Indicator level: {level}\nObservation time: {observed_at}\n"

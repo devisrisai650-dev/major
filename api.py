@@ -53,8 +53,7 @@ def _flood_dashboard(analysis, water, weather, discharge):
         river.get("classification"),
         gauge.get("classification"),
     ]
-    severe = {"VERY_HIGH", "VERY_RAPIDLY_RISING"}
-    elevated = {"HIGH", "RAPIDLY_RISING", "MODERATE"}
+    severe = {"HIGH", "VERY_HIGH", "VERY_RAPIDLY_RISING"}
     readiness = {
         "thresholds_verified": not any("verified official" in item for item in missing),
         "fresh_qc_gauge": bool(gauge.get("available") and gauge.get("is_recent")),
@@ -62,18 +61,44 @@ def _flood_dashboard(analysis, water, weather, discharge):
         "complete_6h_rainfall_available": rainfall.get("last_6h_precipitation_mm") is not None,
         "assessment_ready": bool(assessment.get("complete")),
     }
-    # Never summarize incomplete evidence as a LOW flood signal. Indicators are
-    # descriptive only until official thresholds and fresh QC gauge evidence exist.
-    if not readiness["assessment_ready"]:
-        signal = "INCOMPLETE"
-    elif any(x in severe for x in classifications):
-        signal = "HIGH"
-    elif any(x in elevated for x in classifications):
-        signal = "ELEVATED"
+    # These tiers summarize available environmental indicators only; they are
+    # not an official flood warning or a guarantee that flooding is absent.
+    known = [str(value).upper() for value in classifications if value]
+    if any(value in severe for value in known):
+        environmental_level = "HIGH"
+    elif any(value in {"RAPIDLY_RISING", "MODERATE"} for value in known):
+        environmental_level = "MEDIUM"
+    elif any(value in {"LOW", "STABLE", "RISING"} for value in known):
+        environmental_level = "LOW"
     else:
+        environmental_level = "UNKNOWN"
+
+    if environmental_level == "HIGH":
+        signal = "HIGH"
+    elif environmental_level == "MEDIUM":
+        signal = "ELEVATED"
+    elif environmental_level == "LOW":
         signal = "LOW"
+    else:
+        signal = "INCOMPLETE"
     return {
-        "assessment_status": assessment.get("status", "NOT_ASSESSED"),
+        "assessment_status": environmental_level,
+        "flood_status": environmental_level,
+        "status_basis": "available_environmental_indicators",
+        "environmental_level": environmental_level,
+        "environmental_level_label": {
+            "HIGH": "HIGH ENVIRONMENTAL SIGNAL",
+            "MEDIUM": "MEDIUM ENVIRONMENTAL SIGNAL",
+            "LOW": "LOW ENVIRONMENTAL SIGNAL",
+            "UNKNOWN": "INSUFFICIENT INDICATOR DATA",
+        }[environmental_level],
+        "status_disclaimer": (
+            "Flood status is an indicative estimate derived from available rainfall, "
+            "river discharge, and water-level trend indicators. It is not an "
+            "official warning. LOW means available indicators are low, not a "
+            "guarantee that flooding is absent."
+        ),
+
         "assessment_state": assessment.get("state", "NOT_ASSESSED"),
         "assessment_ready": readiness["assessment_ready"],
         "environmental_signal": signal,
