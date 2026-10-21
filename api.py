@@ -30,6 +30,7 @@ from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
 from services.communication_reliability import router as communication_router
+from services.messages_api import router as messages_router, init_messages_db
 from services.scenario_api import router as scenario_router
 from services.scenario_api import (
     ScenarioRequest as ResearchScenarioRequest,
@@ -149,11 +150,13 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(communication_router)
+app.include_router(messages_router)
 
 @app.on_event("startup")
 async def initialize_auth_database():
     global _alert_monitor_task
     init_db()
+    init_messages_db()
     _alert_monitor_task = start_alert_monitor()
 
 @app.on_event("shutdown")
@@ -239,6 +242,16 @@ def research_lab_page(request: Request):
     if not user:
         return RedirectResponse("/login", status_code=303)
     return FileResponse(Path(__file__).resolve().parent / "web" / "research-lab.html")
+
+@app.get("/messages", include_in_schema=False)
+def messages_page(request: Request):
+    """Serve the secure messaging UI to authenticated regular users only."""
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] == "admin":
+        return RedirectResponse("/admin", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "messages.html")
 
 
 @app.get("/admin", include_in_schema=False)
