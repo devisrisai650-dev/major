@@ -71,7 +71,8 @@ function renderMessage(message){
   }
   const status=message.sender.id===me.id?(message.read_at?"Read":"Sent"):"Received";
   box.append(el("div","time",formatTime(message.created_at)+" · "+status));
-  $("messages").append(box);
+  box.dataset.messageId=String(message.id);
+  return box;
 }
 async function loadContacts(){
   const result=await api("/api/messages/contacts");
@@ -96,14 +97,18 @@ async function selectPeer(){
 async function pollMessages(initial){
   if(!peerId||polling)return;polling=true;
   try{
-    const query=initial||lastId===0?"after_id=0":"after_id="+lastId;
-    const result=await api("/api/messages/"+peerId+"?"+query+"&limit=100");
-    if(initial||lastId===0){$("messages").replaceChildren();lastId=0}
+    if(initial){$("messages").replaceChildren();lastId=0}
+    // Re-read the latest page so read receipts update for messages already displayed.
+    const result=await api("/api/messages/"+peerId+"?after_id=0&limit=100");
+    let added=false;
     for(const message of result.messages||[]){
-      if(message.id>lastId){renderMessage(message);lastId=message.id}
+      const existing=$("messages").querySelector('[data-message-id="'+message.id+'"]');
+      const rendered=renderMessage(message);
+      if(existing){existing.replaceWith(rendered)}
+      else{$("messages").append(rendered);added=true}
+      lastId=Math.max(lastId,message.id);
     }
-    if(initial)$("messages").scrollTop=$("messages").scrollHeight;
-    else if((result.messages||[]).length)$("messages").scrollTop=$("messages").scrollHeight;
+    if(initial||added)$("messages").scrollTop=$("messages").scrollHeight;
     $("poll-status").textContent="Live refresh · "+new Date().toLocaleTimeString();
     $("poll-status").title="Messages refresh automatically every 2.5 seconds";
     showError("");
