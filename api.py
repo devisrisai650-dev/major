@@ -424,7 +424,7 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             region.get("timezone", "Asia/Kolkata"),
         )
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-        if request.scenario_mode != "auto":
+        if request.scenario_mode == "live":
             raise HTTPException(status_code=502, detail=f"Weather service unavailable: {exc}") from exc
         live_weather_available = False
         weather = {
