@@ -140,7 +140,6 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
-app.include_router(scenario_router)
 
 @app.on_event("startup")
 async def initialize_auth_database():
@@ -573,3 +572,5 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         },
     })
 
+# Register the research router after the application routes are declared.
+app.include_router(scenario_router)
