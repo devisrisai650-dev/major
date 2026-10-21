@@ -74,7 +74,7 @@ From `outputs/access_mode_ablation_summary.csv`, with 10 paired seeds per scenar
 |---|---:|---:|---:|
 | Light | 0.9940 (0.9915–0.9970) | 0.6090 (0.5750–0.6465) | 0.9575 (0.9450–0.9700) |
 | Moderate | 0.9705 (0.9600–0.9795) | 0.4315 (0.4065–0.4565) | 0.8190 (0.7970–0.8415) |
-| Severe | 0.7655 (0.7360–0.7940) | 0.0985 (0.0815–0.1175) | 0.5620 (0.5340–0.5890) |
+| Severe | 0.7655 (0.7360–0.7940) | 0.0985 (0.0815–0.1175) | 0.3020 (0.2570–0.3425) |
 
 Values are mean simulated delivery rates (seed-cluster 95% CI). The paired OMA-minus-RIS-CNOMA-oracle intervals excluded zero in these three scenarios, favoring OMA in this specific simulator and setup; this does not prove that OMA is generally superior in real networks. The oracle's perfect-current-CSI selection makes it an idealized comparison, not a deployable policy.
 
