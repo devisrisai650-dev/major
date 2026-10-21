@@ -187,6 +187,12 @@ PIPELINE_ERRORS = Counter(
     ["stage"],
 )
 
+SYNTHETIC_FALLBACKS = Counter(
+    "floodai_synthetic_fallback_triggers_total",
+    "Dashboard synthetic fallback activations by unavailable evidence source.",
+    ["trigger"],
+)
+
 
 @app.middleware("http")
 async def prometheus_middleware(request, call_next):
@@ -255,6 +261,23 @@ class RunRequest(BaseModel):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "FloodAI Local API", "simulation_only": True}
+
+@app.get("/api/health/readiness")
+def readiness():
+    """Report prototype readiness without implying operational flood-warning readiness."""
+    return {
+        "status": "ready_for_simulation",
+        "application_ready": True,
+        "operational_flood_warning_ready": False,
+        "gauge_source": "historical_csv_replay_only",
+        "official_thresholds_verified": False,
+        "channel_model_field_calibrated": False,
+        "simulation_only": True,
+        "reason": (
+            "Operational assessment requires verified station-specific thresholds, "
+            "fresh authoritative QC-passed gauge evidence, and field validation."
+        ),
+    }
 
 
 @app.get("/metrics", include_in_schema=False)
@@ -455,6 +478,13 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
         or not water.get("is_recent", False)
     )
     use_synthetic = request.scenario_mode == "demo" or synthetic_fallback
+    if synthetic_fallback:
+        if not live_weather_available:
+            SYNTHETIC_FALLBACKS.labels("weather_unavailable").inc()
+        if not discharge.get("available", False):
+            SYNTHETIC_FALLBACKS.labels("discharge_unavailable").inc()
+        if not water.get("available", False) or not water.get("is_recent", False):
+            SYNTHETIC_FALLBACKS.labels("gauge_unavailable_or_stale").inc()
     scenario_mode_used = (
         "demo" if request.scenario_mode == "demo"
         else "synthetic_fallback" if synthetic_fallback
