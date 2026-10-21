@@ -1,8 +1,6 @@
 from api import _flood_dashboard
 
 def test_flood_dashboard_exposes_tiered_environmental_signal_without_claiming_no_flood():
-    from api import _flood_dashboard
-
     analysis = {
         "flood_assessment": {
             "status": "NOT_ASSESSED",
@@ -22,8 +20,6 @@ def test_flood_dashboard_exposes_tiered_environmental_signal_without_claiming_no
 
 
 def test_flood_dashboard_low_indicator_does_not_mean_no_flood():
-    from api import _flood_dashboard
-
     analysis = {
         "flood_assessment": {
             "status": "NOT_ASSESSED",
