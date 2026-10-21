@@ -610,6 +610,10 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "source": weather.get("source", "Open-Meteo"),
             "current": weather.get("current", {}),
             "selected_hour": weather.get("selected_hour"),
+            "current_source_type": weather.get("current_source_type", "current_model_estimate"),
+            "retrieved_at_utc": weather.get("retrieved_at_utc"),
+            "provenance_note": weather.get("provenance_note"),
+            "rainfall_windows": weather.get("rainfall_windows", {}),
         },
         "river_discharge": {
             "available": discharge.get("available", False),
