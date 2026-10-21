@@ -29,6 +29,7 @@ from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+from services.scenario_api import router as scenario_router
 
 _alert_monitor_task = None
 
@@ -139,6 +140,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(scenario_router)
 
 @app.on_event("startup")
 async def initialize_auth_database():
@@ -214,6 +216,15 @@ def homepage(request: Request):
 def user_dashboard(request: Request):
     """Convenient authenticated route for the regular-user dashboard."""
     return _dashboard_response(request)
+
+
+@app.get("/research-lab", include_in_schema=False)
+def research_lab_page(request: Request):
+    """Authenticated synthetic research/replay UI; never an operational warning interface."""
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "research-lab.html")
 
 
 @app.get("/admin", include_in_schema=False)
