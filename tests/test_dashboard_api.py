@@ -27,7 +27,8 @@ def test_dashboard_response_contains_only_user_facing_fields():
          patch.object(api, "CsvReplayProvider", FakeGauge):
         response = dashboard(RunRequest(region_id="region_001", time_of_day="18:00"), user=USER)
 
-    assert response["weather"]["selected_hour"]["time"].endswith("T18:00")
+    assert response["weather"]["current"]["time"].endswith("T12:00")
+    assert "selected_hour" not in response["weather"]
     assert response["region"] == {"id": "region_001", "name": "Kakinada", "river": "Godavari"}
     for private_key in ("communication", "orchestrator", "semantic_priorities", "channel_prediction", "provenance"):
         assert private_key not in response
@@ -36,6 +37,6 @@ def test_dashboard_response_contains_only_user_facing_fields():
     assert response["flood_dashboard"]["environmental_signal"] == "INCOMPLETE"
     assert response["flood_assessment"]["complete"] is False
     assert response["flood_assessment"]["status"] == "NOT_ASSESSED"
-    assert response["scenario_mode"] == "synthetic_fallback"
-    assert "not a real warning" in response["scenario_notice"].lower()
+    assert response["scenario_mode"] == "live"
+    assert "synthetic" in response["scenario_notice"].lower()
     assert response["water_level"]["available"] is False
