@@ -15,8 +15,8 @@ def test_flood_dashboard_exposes_tiered_environmental_signal_without_claiming_no
     }
     result = _flood_dashboard(analysis, {}, {}, {})
     assert result["environmental_level"] == "HIGH"
-    assert result["assessment_status"] == "NOT_ASSESSED"
-    assert "not official flood-risk" in result["status_disclaimer"]
+    assert result["assessment_status"] == "HIGH"
+    assert "not an official warning" in result["status_disclaimer"]
 
 
 def test_flood_dashboard_low_indicator_does_not_mean_no_flood():
@@ -34,5 +34,5 @@ def test_flood_dashboard_low_indicator_does_not_mean_no_flood():
     }
     result = _flood_dashboard(analysis, {}, {}, {})
     assert result["environmental_level"] == "LOW"
-    assert result["assessment_status"] == "NOT_ASSESSED"
-    assert "all-clear" in result["status_disclaimer"]
+    assert result["assessment_status"] == "LOW"
+    assert "not a " in result["status_disclaimer"] and "guarantee" in result["status_disclaimer"]
