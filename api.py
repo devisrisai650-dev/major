@@ -543,7 +543,7 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
     flood = _flood_dashboard(analysis, water, weather, discharge)
     if scenario is not None:
         flood["assessment_status"] = "NOT_ASSESSED"
-        flood["environmental_signal"] = "HIGH" if scenario["communication_status"] == "PARTIAL_OUTAGE" else "ELEVATED" if scenario["communication_status"] == "DEGRADED" else "LOW"
+        flood["environmental_signal"] = "INCOMPLETE"
         flood["message"] = "SYNTHETIC FLOOD DEMONSTRATION/FALLBACK ONLY — not a real-world warning; official assessment remains NOT_ASSESSED."
         flood["readiness"]["assessment_ready"] = False
     indicators = {
