@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 import requests
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
@@ -33,7 +33,7 @@ def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
             "showers_mm": _at(hourly.get("showers"), i),
             "wind_speed_kmh": _at(hourly.get("wind_speed_10m"), i),
             "wind_direction_deg": _at(hourly.get("wind_direction_10m"), i),
-            "source_type": "observation" if t <= now else "forecast",
+            "source_type": "past_model_estimate" if t < now else "forecast",
         }
         hourly_conditions.append(row)
         if t <= now:
@@ -62,6 +62,7 @@ def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
     return {
         "current": {
             "time": current.get("time"),
+            "source_type": "current_model_estimate",
             "temperature_c": current.get("temperature_2m"),
             "humidity_pct": current.get("relative_humidity_2m"),
             "precipitation_mm": current.get("precipitation"),
@@ -75,6 +76,9 @@ def get_weather_data(latitude, longitude, timezone="Asia/Kolkata"):
         "hourly_conditions": hourly_conditions,
         "rainfall_windows": rain_windows,
         "source": "Open-Meteo",
+        "current_source_type": "current_model_estimate",
+        "retrieved_at_utc": datetime.now(dt_timezone.utc).isoformat(),
+        "provenance_note": "Open-Meteo current and hourly values are model-based estimates/forecasts, not verified ground-station observations.",
     }
 
 

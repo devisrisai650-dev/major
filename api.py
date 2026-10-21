@@ -30,6 +30,7 @@ from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
 from services.communication_reliability import router as communication_router
+from services.direct_messages import router as direct_messages_router
 from services.scenario_api import router as scenario_router
 from services.scenario_api import (
     ScenarioRequest as ResearchScenarioRequest,
@@ -149,6 +150,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(communication_router)
+app.include_router(direct_messages_router)
 
 @app.on_event("startup")
 async def initialize_auth_database():
@@ -230,6 +232,17 @@ def homepage(request: Request):
 def user_dashboard(request: Request):
     """Convenient authenticated route for the regular-user dashboard."""
     return _dashboard_response(request)
+
+
+@app.get("/messages", include_in_schema=False)
+def messages_page(request: Request):
+    """Serve the authenticated registered-user messaging UI."""
+    user = get_user_from_request(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] != "user":
+        return RedirectResponse("/admin", status_code=303)
+    return FileResponse(Path(__file__).resolve().parent / "web" / "messages.html")
 
 
 @app.get("/research-lab", include_in_schema=False)
@@ -597,6 +610,10 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
             "source": weather.get("source", "Open-Meteo"),
             "current": weather.get("current", {}),
             "selected_hour": weather.get("selected_hour"),
+            "current_source_type": weather.get("current_source_type", "current_model_estimate"),
+            "retrieved_at_utc": weather.get("retrieved_at_utc"),
+            "provenance_note": weather.get("provenance_note"),
+            "rainfall_windows": weather.get("rainfall_windows", {}),
         },
         "river_discharge": {
             "available": discharge.get("available", False),
