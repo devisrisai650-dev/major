@@ -1,4 +1,6 @@
 import requests
+import pytest
+from fastapi import HTTPException
 
 import api
 from api import RunRequest, dashboard
@@ -29,7 +31,7 @@ def unavailable_weather(*args, **kwargs):
     raise requests.RequestException("provider offline")
 
 
-def test_dashboard_falls_back_to_synthetic_data_without_promoting_assessment(monkeypatch):
+def test_live_dashboard_fails_closed_when_weather_provider_is_unavailable(monkeypatch):
     monkeypatch.setattr(api, "get_region", lambda region_id: REGION)
     monkeypatch.setattr(api, "get_weather_data", unavailable_weather)
     monkeypatch.setattr(
@@ -39,15 +41,11 @@ def test_dashboard_falls_back_to_synthetic_data_without_promoting_assessment(mon
     )
     monkeypatch.setattr(api, "CsvReplayProvider", UnavailableGauge)
 
-    response = dashboard(
-        RunRequest(region_id="region_001", time_of_day="18:00"),
-        user=USER,
-    )
+    with pytest.raises(HTTPException) as exc:
+        dashboard(
+            RunRequest(region_id="region_001", scenario_mode="live"),
+            user=USER,
+        )
 
-    assert response["scenario_mode"] == "synthetic_fallback"
-    assert response["flood_assessment"]["status"] == "NOT_ASSESSED"
-    assert response["flood_assessment"]["complete"] is False
-    assert response["water_level"]["available"] is False
-    assert response["flood_indicators"]["water_level"]["available"] is False
-    assert "synthetic" in response["scenario_notice"].lower()
-    assert "not a real-world warning" in response["flood_dashboard"]["message"].lower()
+    assert exc.value.status_code == 502
+    assert "weather service unavailable" in exc.value.detail.lower()
