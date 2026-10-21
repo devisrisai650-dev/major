@@ -211,3 +211,24 @@ def test_monitor_sends_one_indicator_notice_per_level_per_day(monkeypatch, tmp_p
             "current": {"time": s, "rain_mm": 12.0}, "rainfall_windows": {"last_6h_precipitation_mm": 15.0}})
         alert_monitor.check_region(region)
     assert sent == ["2026-10-20T11:45"]
+
+
+def test_configured_alert_recipient_is_included_and_deduplicated(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    _register_alert_user("pleaserespond.vnr@gmail.com")
+    monkeypatch.setenv("FLOODAI_ALERT_RECIPIENT", "pleaserespond.vnr@gmail.com")
+    assert auth_service.get_verified_alert_recipients() == ["pleaserespond.vnr@gmail.com"]
+
+
+def test_configured_alert_recipient_is_added_to_registered_users(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    _register_alert_user("registered-alerts@gmail.com")
+    monkeypatch.setenv("FLOODAI_ALERT_RECIPIENT", "pleaserespond.vnr@gmail.com")
+    recipients = auth_service.get_verified_alert_recipients()
+    assert recipients == ["registered-alerts@gmail.com", "pleaserespond.vnr@gmail.com"]
+
+
+def test_invalid_configured_alert_recipient_is_ignored(monkeypatch, tmp_path):
+    use_test_database(monkeypatch, tmp_path)
+    monkeypatch.setenv("FLOODAI_ALERT_RECIPIENT", "not-an-email")
+    assert auth_service.get_verified_alert_recipients() == []
