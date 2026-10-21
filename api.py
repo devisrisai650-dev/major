@@ -574,3 +574,29 @@ def dashboard(request: RunRequest, user: dict[str, Any] = Depends(require_user))
 
 # Register the research router after the application routes are declared.
 app.include_router(scenario_router)
+
+
+# Direct route bindings for the research lab. These explicit application routes
+# make the prototype endpoints discoverable even when router composition changes.
+from services.scenario_api import (
+    ScenarioRequest as ResearchScenarioRequest,
+    ScenarioRunRequest as ResearchScenarioRunRequest,
+    generate as generate_research_scenario,
+    run_scenario as run_research_scenario,
+    scenario_options as research_scenario_options,
+)
+
+
+@app.get("/api/scenarios/options", tags=["scenario-lab"])
+def research_scenario_options_route():
+    return research_scenario_options()
+
+
+@app.post("/api/scenarios/generate", tags=["scenario-lab"])
+def research_scenario_generate_route(request: ResearchScenarioRequest):
+    return generate_research_scenario(request)
+
+
+@app.post("/api/scenarios/run", tags=["scenario-lab"])
+def research_scenario_run_route(request: ResearchScenarioRunRequest):
+    return run_research_scenario(request)
