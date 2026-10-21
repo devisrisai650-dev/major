@@ -10,6 +10,8 @@ FloodAI is a reproducible research prototype that combines regional environmenta
 - Channel, SNR, latency, RIS effects, packet delivery and AoI are **software simulations**.
 - The Rician K predictor is trained on synthetic data and is not field calibrated.
 - The project does not establish radio-link availability or issue operational flood warnings.
+- The dashboard supports a labeled synthetic fallback when live weather/discharge evidence or fresh gauge replay is unavailable. Synthetic fallback never qualifies as verified gauge evidence; official assessment remains NOT_ASSESSED.
+- GET /api/health/readiness distinguishes readiness to run the simulation from readiness for operational flood warnings.
 
 ## Architecture
 
@@ -48,7 +50,7 @@ Compare the DRL-only controller against the rule-based orchestrator on paired se
 .\\.venv\\Scripts\\python.exe evaluate_orchestrator.py --seeds 5 --messages 20 --steps 40 --output outputs/orchestrator_comparison.csv
 ```
 
-The episode CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The run also writes a paired summary CSV (by default, `outputs/orchestrator_comparison_paired_summary.csv`) with DRL and orchestrated delivery rates, the orchestrated-minus-DRL paired delivery difference and a 95% paired-bootstrap confidence interval, latency differences, and fallback/safe-wait activation rates. A CI that includes zero does not establish a delivery benefit. The outage-stress experiment confirms the fallback paths activate, but the currently observed run does not show a delivery improvement; orchestration should not be described as more reliable without further evidence.
+The episode CSV reports delivery, latency, policy-selection counts and outage exposure for each paired message. The run also writes a paired summary CSV (by default, `outputs/orchestrator_comparison_paired_summary.csv`) with DRL and orchestrated delivery rates, the orchestrated-minus-DRL paired delivery difference and a 95% paired-bootstrap confidence interval, latency differences, and fallback/safe-wait activation rates. A CI that includes zero does not establish a delivery benefit. The access-mode ablation also writes outputs/access_mode_ablation_summary.csv with seed-cluster 95% confidence intervals and paired delivery comparisons; if a paired interval includes zero, report “no benefit established.” The outage-stress experiment confirms the fallback paths activate, but the currently observed run does not show a delivery improvement; orchestration should not be described as more reliable without further evidence.
 
 Reference stress-evaluation findings and limitations are recorded in [`docs/ORCHESTRATOR_STRESS_RESULTS.md`](docs/ORCHESTRATOR_STRESS_RESULTS.md). Re-run the experiment and inspect the generated paired summary before making any performance claim.\n\nRun the orchestrator tests with:
 

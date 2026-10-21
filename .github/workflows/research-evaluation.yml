@@ -97,5 +97,7 @@ jobs:
             outputs/
             models/ris_q_table.npz
             models/xgboost_rician_model_v2.json
+            models/xgboost_rician_model_v2_metrics.json
+            outputs/access_mode_ablation_summary.csv
           if-no-files-found: warn
           retention-days: 14
