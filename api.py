@@ -29,6 +29,7 @@ from services.json_safe import to_json_safe
 from services.auth_api import router as auth_router
 from services.auth_service import get_user_from_request, init_db, require_user
 from services.alert_monitor import start_alert_monitor, stop_alert_monitor
+from services.communication_reliability import router as communication_router
 from services.scenario_api import router as scenario_router
 from services.scenario_api import (
     ScenarioRequest as ResearchScenarioRequest,
@@ -147,6 +148,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(communication_router)
 
 @app.on_event("startup")
 async def initialize_auth_database():
