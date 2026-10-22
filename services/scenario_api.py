@@ -68,6 +68,99 @@ def _make_scenario(request: ScenarioRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/compare")
+def compare_scenarios(request: ScenarioRequest) -> dict[str, Any]:
+    """Compare synthetic no-flood baseline and flood scenario using identical seeds/settings."""
+    region = get_region(request.region_id)
+    common = {
+        "region_id": region["id"],
+        "region_name": region["name"],
+        "rainfall_mm_h": request.rainfall_mm_h,
+        "water_level_rise_m_h": request.water_level_rise_m_h,
+        "communication_condition": request.communication_condition,
+        "playback": request.playback,
+        "seed": request.seed,
+        "steps": request.steps,
+        "start_time": request.start_time,
+        "initial_water_level_m": request.initial_water_level_m,
+    }
+    baseline = generate_scenario(**common, scenario="normal")
+    flood = generate_scenario(**common, scenario="severe")
+
+    def summarize(data: dict[str, Any]) -> dict[str, Any]:
+        rows = data["time_series"]
+        mean_rain = sum(row["rainfall_mm_h"] for row in rows) / len(rows)
+        mean_level = sum(row["water_level_m"] for row in rows) / len(rows)
+        mean_velocity = sum(row["flow_velocity_m_s"] for row in rows) / len(rows)
+        mean_debris = sum(row["debris_density"] for row in rows) / len(rows)
+        mean_obstruction = sum(row["los_obstruction"] for row in rows) / len(rows)
+        available_ratio = sum(bool(row["node_available"]) for row in rows) / len(rows)
+        return {
+            "scenario": data["configuration"]["scenario"],
+            "scenario_id": data["scenario_id"],
+            "synthetic": True,
+            "steps": len(rows),
+            "mean_rainfall_mm_h": round(mean_rain, 3),
+            "peak_rainfall_mm_h": round(max(row["rainfall_mm_h"] for row in rows), 3),
+            "mean_water_level_m": round(mean_level, 3),
+            "peak_water_level_m": round(max(row["water_level_m"] for row in rows), 3),
+            "mean_flow_velocity_m_s": round(mean_velocity, 3),
+            "mean_debris_density": round(mean_debris, 3),
+            "mean_los_obstruction": round(mean_obstruction, 3),
+            "node_availability_pct": round(100 * available_ratio, 2),
+            "time_series": rows,
+        }
+
+    base_summary = summarize(baseline)
+    flood_summary = summarize(flood)
+
+    def delta(key: str) -> dict[str, Any]:
+        before = base_summary[key]
+        after = flood_summary[key]
+        return {
+            "baseline": before,
+            "flood": after,
+            "absolute_change": round(after - before, 3),
+            "percent_change": (
+                round((after - before) / abs(before) * 100, 2)
+                if before not in (0, None) else None
+            ),
+        }
+
+    return to_json_safe({
+        "comparison_type": "paired_synthetic_scenario_comparison",
+        "simulation_only": True,
+        "configuration": {
+            **common,
+            "baseline_scenario": "normal",
+            "flood_scenario": "severe",
+            "paired_seed": request.seed,
+        },
+        "baseline": base_summary,
+        "flood": flood_summary,
+        "comparison": {
+            "mean_rainfall_mm_h": delta("mean_rainfall_mm_h"),
+            "peak_rainfall_mm_h": delta("peak_rainfall_mm_h"),
+            "mean_water_level_m": delta("mean_water_level_m"),
+            "peak_water_level_m": delta("peak_water_level_m"),
+            "mean_flow_velocity_m_s": delta("mean_flow_velocity_m_s"),
+            "mean_debris_density": delta("mean_debris_density"),
+            "mean_los_obstruction": delta("mean_los_obstruction"),
+            "node_availability_pct": delta("node_availability_pct"),
+        },
+        "performance_note": (
+            "This compares synthetic environmental and channel-condition indicators. "
+            "It does not measure end-to-end RIS-CNOMA throughput, latency, or delivery. "
+            "Those require the communication simulation to complete successfully."
+        ),
+        "flood_assessment": {
+            "status": "NOT_ASSESSED",
+            "score": None,
+            "reason": "Synthetic comparisons cannot establish real flood risk.",
+        },
+    })
+
+
 @router.get("/options")
 def scenario_options() -> dict[str, Any]:
     """Return selectable configured regions and supported demo controls."""
