@@ -54,6 +54,7 @@ def transmit_semantic_message(
     seed: int = 2026,
     learn: bool = False,
     channel_context: dict | None = None,
+    assumed_tx_power_w: float = 0.1,
 ) -> dict:
     """Transmit one semantic packet with per-attempt orchestration.
 
@@ -65,6 +66,12 @@ def transmit_semantic_message(
         raise ValueError("Semantic packet must not be empty")
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least one")
+    if assumed_tx_power_w <= 0:
+        raise ValueError("assumed_tx_power_w must be positive")
+
+    # Explicit simulation assumption: estimate serialization duration from the
+    # modeled throughput. This is not measured airtime or device energy.
+    packet_bits = len(packet.encode("utf-8")) * 8
 
     policy_path = Path(policy_path)
     agent = QLearningRISAgent(seed=seed)
@@ -128,8 +135,20 @@ def transmit_semantic_message(
                 env.action_mask(next_observation),
                 terminal,
             )
+        attempt_throughput = info["throughput_mbps"]
+        tx_duration_s = (
+            packet_bits / (float(attempt_throughput) * 1_000_000.0)
+            if not info["waited"] and attempt_throughput is not None
+            and float(attempt_throughput) > 0
+            else 0.0
+        )
+        tx_energy_j = assumed_tx_power_w * tx_duration_s
         attempts.append({
             "attempt": attempt_number,
+            "packet_bits": packet_bits,
+            "assumed_total_tx_power_w": assumed_tx_power_w,
+            "estimated_tx_duration_s": tx_duration_s,
+            "estimated_tx_energy_j": tx_energy_j,
             "candidate": info["channel_candidate"],
             "ris_configuration": info["selected_ris_config"],
             "power_profile": info["power_profile"],
@@ -171,6 +190,15 @@ def transmit_semantic_message(
     aoi_summary = summarize_aoi(attempts)
     orchestration = summarize_decisions(decisions)
     policy_counts = orchestration["policy_counts"]
+    total_estimated_tx_energy_j = sum(
+        float(item.get("estimated_tx_energy_j", 0.0) or 0.0)
+        for item in attempts
+    )
+    energy_efficiency_bits_per_j = (
+        packet_bits / total_estimated_tx_energy_j
+        if delivered and total_estimated_tx_energy_j > 0
+        else 0.0
+    )
     return {
         "priority": priority,
         "delivered": delivered,
@@ -188,6 +216,18 @@ def transmit_semantic_message(
             sum(float(item["throughput_mbps"]) for item in attempts if item["throughput_mbps"] is not None)
             / max(1, sum(item["throughput_mbps"] is not None for item in attempts))
         ),
+        "packet_bits": packet_bits,
+        "assumed_total_tx_power_w": assumed_tx_power_w,
+        "total_estimated_tx_energy_j": total_estimated_tx_energy_j,
+        "energy_efficiency_bits_per_j": energy_efficiency_bits_per_j,
+        "energy_model": {
+            "type": "assumed_constant_tx_power_times_estimated_serialization_duration",
+            "assumed_total_tx_power_w": assumed_tx_power_w,
+            "duration_basis": "packet_bits / modeled_throughput_bps",
+            "includes_receiver_circuit_energy": False,
+            "includes_processing_queueing_and_propagation_energy": False,
+            "measured_hardware_energy": False,
+        },
         "packet_received": received,
         "attempts": attempts,
         "orchestrator": {
