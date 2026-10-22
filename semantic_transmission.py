@@ -73,7 +73,19 @@ def transmit_semantic_message(
             f"Trained RIS-CNOMA policy not found: {policy_path}. "
             "Run evaluate_ris_agent.py first to train the software policy."
         )
-    agent.load(policy_path)
+    policy_load_warning = None
+    try:
+        agent.load(policy_path)
+    except ValueError as exc:
+        # Keep the software simulation usable if a checked-in/trained Q-table
+        # was produced with a different state/action-space version. The agent's
+        # Q-values remain zero-initialized and action selection still uses the
+        # environment's expected-reward heuristic; this is not a trained-policy run.
+        policy_load_warning = (
+            "Saved Q-table is incompatible with the current environment; "
+            "continuing with the untrained heuristic simulation. "
+            f"Details: {exc}"
+        )
     agent.epsilon = 0.0
 
     env = RISEnvironment(
@@ -187,6 +199,7 @@ def transmit_semantic_message(
             "policy_version": "1.0",
         },
         "policy_path": str(policy_path),
+        "policy_load_warning": policy_load_warning,
         "simulation_only": True,
         "learned": learn,
         "used_seed": seed,
