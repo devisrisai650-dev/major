@@ -144,10 +144,25 @@ def run_scenario(request: ScenarioRunRequest) -> dict[str, Any]:
             learn=request.learn,
             channel_context=context,
         )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=500, detail=f"Scenario communication simulation failed: {exc}") from exc
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        # Keep the architecture/scenario output available even when a local
+        # trained Q-table is missing or incompatible. Do not invent delivery
+        # metrics: communication is explicitly marked unavailable.
+        transmission = {
+            "delivered": None,
+            "critical_delivered": False,
+            "attempts": [],
+            "mean_latency_ms": None,
+            "mean_throughput_mbps": None,
+            "orchestrator": {
+                "policy": "unavailable",
+                "selected_policy": None,
+                "reason": "Communication model could not run because the saved Q-table is unavailable or incompatible.",
+            },
+            "simulation_only": True,
+            "error": str(exc),
+            "status": "communication_unavailable",
+        }
 
     return to_json_safe({
         "scenario": scenario,
@@ -155,6 +170,19 @@ def run_scenario(request: ScenarioRunRequest) -> dict[str, Any]:
         "semantic_packet": packet,
         "semantic_priorities": priorities,
         "communication": transmission,
+        "communication_status": (
+            "completed" if "error" not in transmission else "unavailable"
+        ),
+        "architecture_output": {
+            "scenario_generator": "completed",
+            "synthetic_environment": "completed",
+            "semantic_packet": "prepared",
+            "channel_context": "prepared",
+            "ris_cnoma_communication": (
+                "completed" if "error" not in transmission else "unavailable"
+            ),
+            "reason": transmission.get("error"),
+        },
         "orchestrator": transmission.get("orchestrator", {}),
         "flood_assessment": {
             "status": "NOT_ASSESSED",
